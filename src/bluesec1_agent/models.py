@@ -379,13 +379,25 @@ class NextStep(StrictModel):
     function: InvestigationFunction = Field(description="Execute the first remaining step.")
 
 
-def build_strict_json_schema() -> dict[str, Any]:
-    """Build a provider-portable strict JSON Schema for `NextStep`.
+class FinalStep(StrictModel):
+    """A forced terminal turn: the only allowed action is finish_investigation."""
+
+    current_state: str
+    plan_remaining_steps_brief: list[str] = Field(min_length=1, max_length=5)
+    task_completed: bool
+    function: FinishInvestigationRequest
+
+
+def build_strict_json_schema(model: type[BaseModel] = NextStep) -> dict[str, Any]:
+    """Build a provider-portable strict JSON Schema for a step model.
+
+    Args:
+        model: `NextStep`, or `FinalStep` when only finishing is allowed.
 
     Returns:
         Schema with closed objects, required nullable fields, and no defaults.
     """
-    schema = NextStep.model_json_schema(by_alias=True)
+    schema = model.model_json_schema(by_alias=True)
     _normalize_strict_schema(schema)
     return schema
 
@@ -421,5 +433,14 @@ NEXT_STEP_RESPONSE_FORMAT = {
         "name": "bluesec1_next_step",
         "strict": True,
         "schema": build_strict_json_schema(),
+    },
+}
+
+FINAL_STEP_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "bluesec1_final_step",
+        "strict": True,
+        "schema": build_strict_json_schema(FinalStep),
     },
 }

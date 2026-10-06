@@ -142,6 +142,15 @@ created_scheduled_task, accessed_process) to get only what matters.
 """.strip()
 
 MAX_CONSECUTIVE_TASK_FAILURES = 2
+# A small model can loop on a guarded call forever (exp-004: 82 identical repeats). After this
+# many locally answered calls in a row, the next turn may only finish the investigation.
+MAX_CONSECUTIVE_GUARDED = 3
+# The runtime closes a task after 100 tool calls; finish before that with what we know.
+PLATFORM_CALL_BUDGET = 95
+FORCE_FINISH_MESSAGE = (
+    "Stop investigating now: {reason}. Submit finish_investigation with your best verdict "
+    "and the artifacts or evidence already gathered. Use only ids you have seen."
+)
 
 
 class ConsecutiveTaskFailuresError(RuntimeError):
@@ -295,8 +304,23 @@ class SimpleSGRAgent:
             },
         ]
 
+        consecutive_guarded = 0
+        platform_calls = 0
         for step_index in range(1, self.max_steps + 1):
-            step = await self.llm.next_step(messages)
+            reason = None
+            if consecutive_guarded >= MAX_CONSECUTIVE_GUARDED:
+                reason = f"{consecutive_guarded} calls in a row were repeats or invalid"
+            elif platform_calls >= PLATFORM_CALL_BUDGET:
+                reason = f"tool-call budget reached ({platform_calls} calls)"
+            elif step_index >= self.max_steps:
+                reason = "step budget exhausted"
+            if reason is not None:
+                logger.warning("Forcing finish_investigation: {}.", reason)
+                messages.append(
+                    {"role": "user", "content": FORCE_FINISH_MESSAGE.format(reason=reason)}
+                )
+                self._task_stats["forced_finish"] = reason
+            step = await self.llm.next_step(messages, final=reason is not None)
             llm_stats = dict(getattr(self.llm, "last_step_stats", None) or {})
             tool_name = step.function.tool
             arguments = step.function.model_dump(
@@ -330,6 +354,7 @@ class SimpleSGRAgent:
 
             server_result: TaskResult | None = None
             local_feedback = guard.check(tool_name, arguments)
+            consecutive_guarded = consecutive_guarded + 1 if local_feedback is not None else 0
             if local_feedback is not None:
                 feedback = local_feedback
                 logger.info("Guard answered {} locally ({}).", tool_name, feedback["local_guard"])
@@ -343,6 +368,7 @@ class SimpleSGRAgent:
                 }
                 logger.warning("Rejected unavailable tool {} locally.", tool_name)
             else:
+                platform_calls += 1
                 platform_tool, platform_arguments = self._platform_call(tool_name, arguments)
                 response = await session.call_tool(platform_tool, platform_arguments)
                 feedback = self._tool_feedback(response)
@@ -445,6 +471,7 @@ class SimpleSGRAgent:
             "total_tokens": 0,
             "cost_usd": 0.0,
             "llm_latency_ms": 0,
+            "forced_finish": None,
             "verdict": None,
             "ir_artifacts": None,
             "legitimacy_evidence": None,

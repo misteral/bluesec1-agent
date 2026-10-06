@@ -12,6 +12,7 @@ from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import ValidationError
 
 from bluesec1_agent.models import (
+    FINAL_STEP_RESPONSE_FORMAT,
     NEXT_STEP_RESPONSE_FORMAT,
     FinishInvestigationRequest,
     NextStep,
@@ -83,8 +84,8 @@ class NextStepRequestError(RuntimeError):
 class StructuredStepClient(Protocol):
     """Narrow async contract consumed by the investigation loop."""
 
-    async def next_step(self, messages: list[dict[str, Any]]) -> NextStep:
-        """Generate and validate one investigation step."""
+    async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
+        """Generate and validate one investigation step (only finishing when `final`)."""
         ...
 
 
@@ -191,7 +192,7 @@ class OpenAIStructuredStepClient:
             max_completion_tokens=self.max_completion_tokens,
         )
 
-    async def next_step(self, messages: list[dict[str, Any]]) -> NextStep:
+    async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
         """Return one valid `NextStep`, repairing malformed replies when possible.
 
         Args:
@@ -228,7 +229,12 @@ class OpenAIStructuredStepClient:
             started_at = time.perf_counter()
             response = await self._create(
                 messages=cast(list[ChatCompletionMessageParam], request_messages),
-                response_format=cast(ResponseFormatJSONSchema, self._response_format),
+                response_format=cast(
+                    ResponseFormatJSONSchema,
+                    FINAL_STEP_RESPONSE_FORMAT
+                    if final and self.response_format == "json_schema"
+                    else self._response_format,
+                ),
                 max_completion_tokens=self.max_completion_tokens,
             )
             latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -244,6 +250,8 @@ class OpenAIStructuredStepClient:
 
             try:
                 step = parse_next_step_payload(raw_content)
+                if final and not isinstance(step.function, FinishInvestigationRequest):
+                    raise ValueError("Only finish_investigation is allowed on this turn.")
             except ValueError as exc:
                 last_error = exc
                 logger.warning(

@@ -34,7 +34,7 @@ class FakeStepClient:
         self.steps = list(steps)
         self.requests: list[list[dict[str, Any]]] = []
 
-    async def next_step(self, messages: list[dict[str, Any]]) -> NextStep:
+    async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
         """Record one conversation and return its next prepared step.
 
         Args:
@@ -281,3 +281,34 @@ def test_expand_entity_translates_to_search_and_keeps_adjacent_relations() -> No
     assert relations[0]["properties"] == {"y": 1}
     assert feedback["result"]["other_matches"] == 1
     assert "note" not in feedback
+
+
+class LoopingStepClient(FakeStepClient):
+    """Repeats the same evidence call until it is told only finishing is allowed."""
+
+    def __init__(self) -> None:
+        """Prepare one repeated step and one terminal step."""
+        plan = two_step_plan()
+        super().__init__([])
+        self.repeat, self.finish = plan
+        self.final_flags: list[bool] = []
+
+    async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
+        """Loop on the repeated call; finish only when forced."""
+        self.requests.append([dict(message) for message in messages])
+        self.final_flags.append(final)
+        return self.finish if final else self.repeat
+
+
+def test_agent_forces_finish_after_repeated_guarded_calls() -> None:
+    """A model stuck on a duplicate call is forced to submit instead of burning the budget."""
+    llm = LoopingStepClient()
+    session = FakeSession()
+
+    result = asyncio.run(SimpleSGRAgent(llm).run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    assert result.successful_tasks == 1
+    # One real call, three guarded duplicates, then the forced terminal turn.
+    assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
+    assert llm.final_flags == [False, False, False, False, True]
+    assert "Stop investigating now" in llm.requests[-1][-1]["content"]
