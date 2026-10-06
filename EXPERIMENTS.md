@@ -46,6 +46,7 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 | Config | Runs | reward mean | spread |
 |---|---|---|---|
 | reference agent, deepseek-v4-pro | exp-001 (stopped) | scores only on platform UI | not repeated — too expensive |
+| reference agent, dots-3-note-preview:free | exp-002 | _pending_ | second run needed for noise floor |
 
 ## Log
 
@@ -53,3 +54,4 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | exp-000 | 2026-10-06 | 97ac821 | apodex/apodex-1.1-mini:free | reference agent runs on a free model | none | — | — | — | — | — | 0 | **Failed:** provider rejects `json_schema` → all 6 tasks aborted. Added `LLM_RESPONSE_FORMAT`, LLM preflight, stop after 2 consecutive failures. Free tier also hit upstream 429 — seen in a manual LLM-only preflight probe at ~22:01 after the run (not in the run log). |
 | exp-001 | 2026-10-06 | 97ac821* | deepseek/deepseek-v4-pro | establish the reference-agent baseline | none (format/preflight fixes only) | n/a | | | | 49/113 ≈ 0.43 | ≈1.17 | **Stopped manually at 22:49 on budget** (7th task in progress; CloseRun sent at 22:49:51, response not confirmed — process interrupted). 6 tasks finished via finish_investigation; server scores not captured (pre-tracking code prints them only at run end — check the platform UI). ~14.5M tokens over 113 LLM steps (+5 invalid attempts); up to 306,107 tokens/step; two 230–250 s gaps ending in an invalid structured reply (cause not established; per-request timeout is 120 s). $ = OpenRouter key usage_daily on 2026-10-06 (includes exp-000 and probes). **Lesson:** the reference loop's full-history context is the cost driver; cap tokens/steps per task before any further run. |
+| exp-002 | 2026-10-06 | _see run label_ | dots-studio/dots-3-note-preview:free | free-model baseline of the reference loop; expect err% ≈ 0.4–0.5 like exp-001, ~15–20 calls/task, $0 | none (reference loop; tracking on) | _pending_ | | | | | 0 | |
