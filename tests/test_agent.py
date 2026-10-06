@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -11,6 +12,7 @@ from bluesec1_agent.models import (
     MaliciousFinishInvestigationSubmission,
     NextStep,
 )
+from bluesec1_agent.tracking import RunRecorder
 from bluesec1_client import (
     PublicTask,
     RemoteBenchmarkClient,
@@ -146,40 +148,43 @@ class FakeClient:
         return cast(RemoteBenchmarkSession, session)
 
 
+def two_step_plan() -> list[NextStep]:
+    """Return one evidence step followed by a malicious verdict."""
+    return [
+        NextStep(
+            current_state="Alert identifies process 42 on host-1.",
+            plan_remaining_steps_brief=["Inspect its process ancestry and descendants."],
+            task_completed=False,
+            function=GetEntityRequest(
+                tool="get_entity",
+                entity_id="entity-1",
+                reasoning="Inspect the alert entity.",
+            ),
+        ),
+        NextStep(
+            current_state="The suspicious process is confirmed on host-1.",
+            plan_remaining_steps_brief=["Submit the evidence-backed malicious verdict."],
+            task_completed=True,
+            function=FinishInvestigationRequest(
+                tool="finish_investigation",
+                submission=MaliciousFinishInvestigationSubmission(
+                    verdict="malicious",
+                    ir_artifacts=[
+                        FinishInvestigationArtifact(
+                            entity_id="host-1",
+                            kind="host_to_isolate",
+                        )
+                    ],
+                    reasoning="The alert process is part of a suspicious process chain.",
+                ),
+            ),
+        ),
+    ]
+
+
 def test_agent_executes_fresh_structured_task_via_remote_session() -> None:
     """Tool evidence should feed the next step before the terminal action."""
-    llm = FakeStepClient(
-        [
-            NextStep(
-                current_state="Alert identifies process 42 on host-1.",
-                plan_remaining_steps_brief=["Inspect its process ancestry and descendants."],
-                task_completed=False,
-                function=GetEntityRequest(
-                    tool="get_entity",
-                    entity_id="entity-1",
-                    reasoning="Inspect the alert entity.",
-                ),
-            ),
-            NextStep(
-                current_state="The suspicious process is confirmed on host-1.",
-                plan_remaining_steps_brief=["Submit the evidence-backed malicious verdict."],
-                task_completed=True,
-                function=FinishInvestigationRequest(
-                    tool="finish_investigation",
-                    submission=MaliciousFinishInvestigationSubmission(
-                        verdict="malicious",
-                        ir_artifacts=[
-                            FinishInvestigationArtifact(
-                                entity_id="host-1",
-                                kind="host_to_isolate",
-                            )
-                        ],
-                        reasoning="The alert process is part of a suspicious process chain.",
-                    ),
-                ),
-            ),
-        ]
-    )
+    llm = FakeStepClient(two_step_plan())
     session = FakeSession()
     client = FakeClient(session)
 
@@ -207,3 +212,25 @@ def test_agent_executes_fresh_structured_task_via_remote_session() -> None:
         message.get("role") == "tool" and "process-1" in str(message.get("content"))
         for message in llm.requests[1]
     )
+
+
+def test_recorder_persists_config_steps_tasks_and_summary(tmp_path: Path) -> None:
+    """A recorded run should leave every artifact needed to compare experiments."""
+    recorder = RunRecorder("exp-test", {"model": "test-model"}, root=tmp_path)
+    agent = SimpleSGRAgent(FakeStepClient(two_step_plan()), recorder=recorder)
+
+    asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(FakeSession()))))
+
+    config = json.loads((recorder.directory / "config.json").read_text())
+    steps = [json.loads(line) for line in (recorder.directory / "steps.jsonl").open()]
+    tasks = [json.loads(line) for line in (recorder.directory / "tasks.jsonl").open()]
+    summary = json.loads((recorder.directory / "summary.json").read_text())
+    assert config["run_id"] == "run-1"
+    assert [step["tool"] for step in steps] == ["get_entity", "finish_investigation"]
+    assert tasks[0]["task_id"] == "task-1"
+    assert tasks[0]["verdict"] == "malicious"
+    assert tasks[0]["tool_counts"] == {"get_entity": 1, "finish_investigation": 1}
+    assert tasks[0]["scenario_fp"]
+    assert summary["tasks"] == 1
+    assert summary["completed"] == 1
+    assert (recorder.directory / "observations.jsonl").exists()

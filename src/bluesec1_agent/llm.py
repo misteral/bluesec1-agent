@@ -2,7 +2,7 @@ import json
 import re
 import time
 from types import TracebackType
-from typing import Any, Protocol, Self, cast
+from typing import Any, Literal, Protocol, Self, cast
 
 from loguru import logger
 from openai import AsyncOpenAI
@@ -36,6 +36,13 @@ Set task_completed=true only for a function whose tool is finish_investigation.
 Return no prose, markdown, XML, comments, or keys outside the required object.
 """.strip()
 
+JSON_OBJECT_SCHEMA_INSTRUCTION = (
+    "The reply must validate against this JSON schema:\n"
+    + json.dumps(NEXT_STEP_RESPONSE_FORMAT["json_schema"]["schema"], separators=(",", ":"))
+)
+
+ResponseFormatMode = Literal["json_schema", "json_object"]
+
 REPAIR_INSTRUCTION = (
     "Your previous reply violated the required NextStep contract. " + STRUCTURED_OUTPUT_INSTRUCTION
 )
@@ -65,6 +72,7 @@ class OpenAIStructuredStepClient:
         timeout_seconds: float,
         max_completion_tokens: int,
         max_retries: int,
+        response_format: ResponseFormatMode = "json_schema",
         client: AsyncOpenAI | None = None,
     ) -> None:
         """Initialize an OpenAI-compatible structured step generator.
@@ -76,17 +84,30 @@ class OpenAIStructuredStepClient:
             timeout_seconds: Timeout applied to each provider request.
             max_completion_tokens: Maximum generated tokens per attempt.
             max_retries: Maximum schema-generation attempts per step.
+            response_format: `json_schema` for strict provider-side schemas, or
+                `json_object` for providers that only support JSON mode; the
+                schema is then embedded in the system prompt.
             client: Optional injected SDK client used by tests.
         """
         self.model = model
         self.max_completion_tokens = max_completion_tokens
         self.max_retries = max_retries
+        self.response_format = response_format
+        self.last_step_stats: dict[str, Any] = {}
+        self._instruction = STRUCTURED_OUTPUT_INSTRUCTION
+        self._response_format: dict[str, Any] = NEXT_STEP_RESPONSE_FORMAT
+        if response_format == "json_object":
+            self._instruction = (
+                f"{STRUCTURED_OUTPUT_INSTRUCTION}\n\n{JSON_OBJECT_SCHEMA_INSTRUCTION}"
+            )
+            self._response_format = {"type": "json_object"}
         self._owns_client = client is None
         self._client = client or AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout_seconds,
-            max_retries=0,
+            # SDK backoff covers transient 429/5xx; schema repair stays in next_step.
+            max_retries=3,
         )
 
     async def __aenter__(self) -> Self:
@@ -107,6 +128,25 @@ class OpenAIStructuredStepClient:
         if self._owns_client:
             await self._client.close()
 
+    async def preflight(self) -> None:
+        """Send one tiny request with the configured response format.
+
+        Provider-side rejections (unsupported model, response format, credentials)
+        surface here, before a remote run is created and tasks are leased.
+
+        Raises:
+            openai.APIError: If the provider rejects the request.
+        """
+        await self._client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "Reply with the JSON object {\"ok\": true}."},
+                {"role": "user", "content": "ping"},
+            ],
+            response_format=cast(ResponseFormatJSONSchema, self._response_format),
+            max_completion_tokens=self.max_completion_tokens,
+        )
+
     async def next_step(self, messages: list[dict[str, Any]]) -> NextStep:
         """Return one valid `NextStep`, repairing malformed replies when possible.
 
@@ -123,27 +163,43 @@ class OpenAIStructuredStepClient:
         if request_messages and request_messages[0].get("role") == "system":
             first_message = dict(request_messages[0])
             first_message["content"] = (
-                f"{first_message.get('content', '')}\n\n{STRUCTURED_OUTPUT_INSTRUCTION}"
+                f"{first_message.get('content', '')}\n\n{self._instruction}"
             )
             request_messages[0] = first_message
         else:
             request_messages.insert(
                 0,
-                {"role": "system", "content": STRUCTURED_OUTPUT_INSTRUCTION},
+                {"role": "system", "content": self._instruction},
             )
         last_error: Exception | None = None
+        stats = {
+            "attempts": 0,
+            "latency_ms": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+        }
+        self.last_step_stats = stats
 
         for attempt in range(1, self.max_retries + 1):
             started_at = time.perf_counter()
             response = await self._client.chat.completions.create(
                 model=self.model,
                 messages=cast(list[ChatCompletionMessageParam], request_messages),
-                response_format=cast(ResponseFormatJSONSchema, NEXT_STEP_RESPONSE_FORMAT),
+                response_format=cast(ResponseFormatJSONSchema, self._response_format),
                 max_completion_tokens=self.max_completion_tokens,
             )
             latency_ms = int((time.perf_counter() - started_at) * 1000)
             raw_content = extract_raw_content(response)
             total_tokens = response_total_tokens(response)
+            usage = getattr(response, "usage", None)
+            stats["attempts"] = attempt
+            stats["latency_ms"] += latency_ms
+            stats["prompt_tokens"] += int(getattr(usage, "prompt_tokens", 0) or 0)
+            stats["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
+            stats["total_tokens"] += total_tokens
+            stats["cost_usd"] += float(getattr(usage, "cost", 0.0) or 0.0)
 
             try:
                 step = parse_next_step_payload(raw_content)

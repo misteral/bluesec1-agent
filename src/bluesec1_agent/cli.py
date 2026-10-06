@@ -6,9 +6,10 @@ import sys
 import truststore
 from pydantic import ValidationError
 
-from bluesec1_agent.agent import SimpleSGRAgent
+from bluesec1_agent.agent import SYSTEM_PROMPT, SimpleSGRAgent
 from bluesec1_agent.llm import OpenAIStructuredStepClient
 from bluesec1_agent.settings import Settings
+from bluesec1_agent.tracking import RunRecorder, sha256_text
 from bluesec1_client import (
     CompetitionClosedError,
     RemoteAuthenticationError,
@@ -34,6 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agent-name", help="Override AGENT_NAME.")
     parser.add_argument("--arena", help="Override SCENARIO_RUNTIME_ARENA.")
     parser.add_argument(
+        "--experiment",
+        default="adhoc",
+        help="Experiment id used in the runs/ directory name, e.g. exp-002-compact-context.",
+    )
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Do not write run artifacts under runs/.",
+    )
+    parser.add_argument(
         "--verify-tls",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -57,11 +68,31 @@ async def run(args: argparse.Namespace) -> None:
         timeout_seconds=settings.llm_timeout_seconds,
         max_completion_tokens=settings.llm_max_completion_tokens,
         max_retries=settings.llm_max_step_retries,
+        response_format=settings.llm_response_format,
     )
     agent_name = args.agent_name or settings.agent_name
     verify_tls = (
         settings.scenario_runtime_verify_tls if args.verify_tls is None else args.verify_tls
     )
+    arena = args.arena or settings.scenario_runtime_arena
+    recorder = None
+    if not args.no_record:
+        recorder = RunRecorder(
+            args.experiment,
+            {
+                "experiment": args.experiment,
+                "agent_name": agent_name,
+                "arena": arena,
+                "model": settings.llm_default_model,
+                "response_format": settings.llm_response_format,
+                "max_steps": settings.agent_max_steps,
+                "max_completion_tokens": settings.llm_max_completion_tokens,
+                "system_prompt_sha": sha256_text(SYSTEM_PROMPT),
+            },
+        )
+        print(f"Recording run artifacts to {recorder.directory}", file=sys.stderr)
+    # Fail before CreateRun: a broken provider would otherwise abort every leased task.
+    await llm.preflight()
     async with (
         llm,
         RemoteBenchmarkClient(
@@ -71,7 +102,7 @@ async def run(args: argparse.Namespace) -> None:
             run_label=args.run_label or settings.remote_run_label,
             agent_name=agent_name,
             model_name=settings.llm_default_model,
-            arena=args.arena or settings.scenario_runtime_arena,
+            arena=arena,
             metadata={
                 "agent": agent_name,
                 "implementation": "structured-generation-scenario-runtime-grpc",
@@ -82,6 +113,7 @@ async def run(args: argparse.Namespace) -> None:
         result = await SimpleSGRAgent(
             llm,
             max_steps=settings.agent_max_steps,
+            recorder=recorder,
         ).run(client)
 
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
