@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import time
@@ -5,7 +6,7 @@ from types import TracebackType
 from typing import Any, Literal, Protocol, Self, cast
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import ValidationError
@@ -36,12 +37,39 @@ Set task_completed=true only for a function whose tool is finish_investigation.
 Return no prose, markdown, XML, comments, or keys outside the required object.
 """.strip()
 
-JSON_OBJECT_SCHEMA_INSTRUCTION = (
-    "The reply must validate against this JSON schema:\n"
-    + json.dumps(NEXT_STEP_RESPONSE_FORMAT["json_schema"]["schema"], separators=(",", ":"))
+JSON_OBJECT_SCHEMA_INSTRUCTION = "The reply must validate against this JSON schema:\n" + json.dumps(
+    NEXT_STEP_RESPONSE_FORMAT["json_schema"]["schema"], separators=(",", ":")
 )
 
 ResponseFormatMode = Literal["json_schema", "json_object"]
+
+# Free-tier limits are per minute; the SDK's sub-second backoff cannot outlast the window.
+RATE_LIMIT_MAX_WAITS = 8
+RATE_LIMIT_DEFAULT_WAIT_SECONDS = 30.0
+RATE_LIMIT_MAX_WAIT_SECONDS = 75.0
+
+
+def rate_limit_wait_seconds(error: RateLimitError, now_ms: float | None = None) -> float:
+    """Return how long to wait before retrying, from the provider's reset header if present.
+
+    Args:
+        error: Provider 429 error; OpenRouter puts `X-RateLimit-Reset` (epoch ms) in metadata.
+        now_ms: Current epoch time in milliseconds, injectable for tests.
+
+    Returns:
+        Seconds to sleep, bounded to a sane range.
+    """
+    now_ms = time.time() * 1000 if now_ms is None else now_ms
+    body = error.body if isinstance(error.body, dict) else {}
+    body = body.get("error", body) if isinstance(body.get("error", body), dict) else body
+    headers = (body.get("metadata") or {}).get("headers") or {}
+    reset = headers.get("X-RateLimit-Reset")
+    try:
+        wait = (float(reset) - now_ms) / 1000 + 1.0
+    except (TypeError, ValueError):
+        wait = RATE_LIMIT_DEFAULT_WAIT_SECONDS
+    return min(max(wait, 2.0), RATE_LIMIT_MAX_WAIT_SECONDS)
+
 
 REPAIR_INSTRUCTION = (
     "Your previous reply violated the required NextStep contract. " + STRUCTURED_OUTPUT_INSTRUCTION
@@ -128,6 +156,23 @@ class OpenAIStructuredStepClient:
         if self._owns_client:
             await self._client.close()
 
+    async def _create(self, **kwargs: Any) -> Any:
+        """Create a chat completion, waiting out per-minute rate-limit windows.
+
+        Raises:
+            RateLimitError: If the provider is still rate-limiting after all waits.
+        """
+        for wait_index in range(RATE_LIMIT_MAX_WAITS + 1):
+            try:
+                return await self._client.chat.completions.create(model=self.model, **kwargs)
+            except RateLimitError as error:
+                if wait_index == RATE_LIMIT_MAX_WAITS:
+                    raise
+                wait = rate_limit_wait_seconds(error)
+                logger.warning("LLM rate-limited; waiting {:.0f} s before retrying.", wait)
+                await asyncio.sleep(wait)
+        raise AssertionError("unreachable")
+
     async def preflight(self) -> None:
         """Send one tiny request with the configured response format.
 
@@ -137,10 +182,9 @@ class OpenAIStructuredStepClient:
         Raises:
             openai.APIError: If the provider rejects the request.
         """
-        await self._client.chat.completions.create(
-            model=self.model,
+        await self._create(
             messages=[
-                {"role": "system", "content": "Reply with the JSON object {\"ok\": true}."},
+                {"role": "system", "content": 'Reply with the JSON object {"ok": true}.'},
                 {"role": "user", "content": "ping"},
             ],
             response_format=cast(ResponseFormatJSONSchema, self._response_format),
@@ -162,9 +206,7 @@ class OpenAIStructuredStepClient:
         request_messages = list(messages)
         if request_messages and request_messages[0].get("role") == "system":
             first_message = dict(request_messages[0])
-            first_message["content"] = (
-                f"{first_message.get('content', '')}\n\n{self._instruction}"
-            )
+            first_message["content"] = f"{first_message.get('content', '')}\n\n{self._instruction}"
             request_messages[0] = first_message
         else:
             request_messages.insert(
@@ -184,8 +226,7 @@ class OpenAIStructuredStepClient:
 
         for attempt in range(1, self.max_retries + 1):
             started_at = time.perf_counter()
-            response = await self._client.chat.completions.create(
-                model=self.model,
+            response = await self._create(
                 messages=cast(list[ChatCompletionMessageParam], request_messages),
                 response_format=cast(ResponseFormatJSONSchema, self._response_format),
                 max_completion_tokens=self.max_completion_tokens,

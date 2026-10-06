@@ -225,3 +225,20 @@ def test_benign_finish_uses_submission_envelope() -> None:
                 "submission": {"verdict": "benign", "ir_artifacts": [], "reasoning": "Safe."},
             }
         )
+
+
+def test_rate_limit_wait_uses_openrouter_reset_header() -> None:
+    """A per-minute 429 should wait until the reported window reset, bounded."""
+    import httpx
+    from openai import RateLimitError
+
+    from bluesec1_agent.llm import rate_limit_wait_seconds
+
+    request = httpx.Request("POST", "https://llm.example/v1/chat/completions")
+    body = {"error": {"code": 429, "metadata": {"headers": {"X-RateLimit-Reset": "61000"}}}}
+    error = RateLimitError("limited", response=httpx.Response(429, request=request), body=body)
+
+    assert rate_limit_wait_seconds(error, now_ms=1000) == 61.0
+    assert rate_limit_wait_seconds(error, now_ms=0) == 62.0
+    no_header = RateLimitError("limited", response=httpx.Response(429, request=request), body={})
+    assert rate_limit_wait_seconds(no_header, now_ms=0) == 30.0
