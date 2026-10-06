@@ -312,3 +312,19 @@ def test_agent_forces_finish_after_repeated_guarded_calls() -> None:
     assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
     assert llm.final_flags == [False, False, False, False, True]
     assert "Stop investigating now" in llm.requests[-1][-1]["content"]
+
+
+def test_finish_review_holds_the_first_finish_for_one_review_turn() -> None:
+    """With review on, the first finish is answered locally and the next turn must finish."""
+    plan = two_step_plan()
+    session = FakeSession()
+
+    agent = SimpleSGRAgent(FakeStepClient([plan[0], plan[1], plan[1]]), finish_review=True)
+    result = asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+    calls = [name for name, _ in session.calls]
+
+    assert result.successful_tasks == 1
+    assert calls == ["get_entity", "finish_investigation"]
+    review_turn = agent.llm.requests[-1][-1]
+    assert review_turn["role"] == "tool"
+    assert "REVIEW BEFORE SUBMITTING" in review_turn["content"]

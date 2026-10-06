@@ -96,6 +96,7 @@ async def run(args: argparse.Namespace) -> None:
                 "max_completion_tokens": settings.llm_max_completion_tokens,
                 "agent_prompt": settings.agent_prompt,
                 "expand_entity": settings.agent_expand_entity,
+                "finish_review": settings.agent_finish_review,
                 "system_prompt_sha": system_prompt_sha,
             },
         )
@@ -128,6 +129,7 @@ async def run(args: argparse.Namespace) -> None:
             recorder=recorder,
             system_prompt=system_prompt,
             expand_entity=settings.agent_expand_entity,
+            finish_review=settings.agent_finish_review,
         ).run(client)
 
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))

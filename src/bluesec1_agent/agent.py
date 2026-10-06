@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
 from bluesec1_agent.llm import StructuredStepClient, render_json
 from bluesec1_agent.models import NextStep
+from bluesec1_agent.review import EntityBook, gate_issues, review_message, sanitize_submission
 from bluesec1_agent.tracking import RunRecorder, scenario_fingerprint
 from bluesec1_client import (
     RemoteBenchmarkClient,
@@ -179,6 +180,7 @@ class SimpleSGRAgent:
         recorder: RunRecorder | None = None,
         system_prompt: str = SYSTEM_PROMPT,
         expand_entity: bool = False,
+        finish_review: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -188,6 +190,7 @@ class SimpleSGRAgent:
             recorder: Optional experiment recorder for steps and task results.
             system_prompt: System prompt used for every task.
             expand_entity: Advertise the agent-side `expand_entity` helper (H-13).
+            finish_review: Gate and review finish_investigation once before sending (H-03/04).
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -198,6 +201,7 @@ class SimpleSGRAgent:
         self.max_steps = max_steps
         self.recorder = recorder
         self.expand_entity = expand_entity
+        self.finish_review = finish_review
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -288,6 +292,10 @@ class SimpleSGRAgent:
         registry = IdRegistry()
         registry.learn(alert)
         guard = CallGuard(registry)
+        book = EntityBook()
+        book.learn(alert)
+        reviewed = False
+        review_pending = False
 
         # The tool catalog is sent once here; tool feedback carries only per-call data.
         messages: list[dict[str, Any]] = [
@@ -320,7 +328,8 @@ class SimpleSGRAgent:
                     {"role": "user", "content": FORCE_FINISH_MESSAGE.format(reason=reason)}
                 )
                 self._task_stats["forced_finish"] = reason
-            step = await self.llm.next_step(messages, final=reason is not None)
+            step = await self.llm.next_step(messages, final=reason is not None or review_pending)
+            review_pending = False
             llm_stats = dict(getattr(self.llm, "last_step_stats", None) or {})
             tool_name = step.function.tool
             arguments = step.function.model_dump(
@@ -353,6 +362,33 @@ class SimpleSGRAgent:
             )
 
             server_result: TaskResult | None = None
+            if tool_name == "finish_investigation" and self.finish_review:
+                submission = arguments.get("submission", {})
+                seen_ids = set(registry.kinds) | set(book.entities)
+                if not reviewed:
+                    reviewed = True
+                    review_pending = True
+                    issues = gate_issues(submission, book, seen_ids)
+                    self._task_stats["review_issues"] = issues
+                    self._task_stats["draft_verdict"] = submission.get("verdict")
+                    feedback = {
+                        "status": "review",
+                        "local_guard": "finish_review",
+                        "message": review_message(submission, book, issues),
+                    }
+                    logger.info("Finish review requested ({} gate issues).", len(issues))
+                    self._record_step(
+                        session.task_id, step_index, step, arguments, feedback, llm_stats
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "content": render_json(feedback),
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
+                    continue
+                arguments["submission"] = sanitize_submission(submission, book, seen_ids)
             local_feedback = guard.check(tool_name, arguments)
             consecutive_guarded = consecutive_guarded + 1 if local_feedback is not None else 0
             if local_feedback is not None:
@@ -375,6 +411,8 @@ class SimpleSGRAgent:
                 if tool_name == "expand_entity":
                     feedback = self._neighbourhood(arguments["entity_id"], feedback)
                 guard.remember(tool_name, arguments, feedback)
+                book.learn(feedback.get("result"))
+                book.learn(feedback.get("raw_result"))
                 server_result = response.task_result
                 logger.info(
                     "Tool {} returned status {}.{}",
