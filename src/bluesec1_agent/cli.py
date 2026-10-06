@@ -6,7 +6,7 @@ import sys
 import truststore
 from pydantic import ValidationError
 
-from bluesec1_agent.agent import SYSTEM_PROMPT, SimpleSGRAgent
+from bluesec1_agent.agent import SYSTEM_PROMPTS, SimpleSGRAgent
 from bluesec1_agent.llm import OpenAIStructuredStepClient
 from bluesec1_agent.settings import Settings
 from bluesec1_agent.tracking import RunRecorder, git_state, sha256_text
@@ -78,7 +78,8 @@ async def run(args: argparse.Namespace) -> None:
     git = git_state()
     commit = f"{git['commit'] or 'nogit'}{'-dirty' if git['dirty'] else ''}"
     run_label = args.run_label or settings.remote_run_label or f"{args.experiment}@{commit}"
-    system_prompt_sha = sha256_text(SYSTEM_PROMPT)
+    system_prompt = SYSTEM_PROMPTS[settings.agent_prompt]
+    system_prompt_sha = sha256_text(system_prompt)
     recorder = None
     if not args.no_record:
         recorder = RunRecorder(
@@ -92,6 +93,7 @@ async def run(args: argparse.Namespace) -> None:
                 "response_format": settings.llm_response_format,
                 "max_steps": settings.agent_max_steps,
                 "max_completion_tokens": settings.llm_max_completion_tokens,
+                "agent_prompt": settings.agent_prompt,
                 "system_prompt_sha": system_prompt_sha,
             },
         )
@@ -122,6 +124,7 @@ async def run(args: argparse.Namespace) -> None:
             llm,
             max_steps=settings.agent_max_steps,
             recorder=recorder,
+            system_prompt=system_prompt,
         ).run(client)
 
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))

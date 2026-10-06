@@ -15,7 +15,7 @@ from bluesec1_client import (
     ToolCallResult,
 )
 
-SYSTEM_PROMPT = """
+STRATEGY_SYSTEM_PROMPT = """
 You are a senior SOC analyst investigating one security alert in an evidence graph.
 
 Return exactly one JSON object matching the supplied NextStep schema on every turn.
@@ -83,6 +83,35 @@ connections to rare external IPs, defence evasion (log clearing, AV tampering).
 """.strip()
 
 
+# Organisers' reference prompt, kept for A/B runs (AGENT_PROMPT=reference).
+REFERENCE_SYSTEM_PROMPT = """
+You are a pragmatic senior SOC analyst investigating one security alert.
+
+Return exactly one JSON object matching the supplied NextStep schema on every turn.
+Do not emit prose, markdown, XML tags, or extra keys outside that object.
+
+The task observation contains `available_tools`, the authoritative catalog of
+enabled tool calls and their argument schemas. Follow that catalog exactly.
+
+Investigation rules:
+- Treat the alert as an initial hypothesis, not proof that the activity is malicious.
+- Use only tools advertised in the current task observation.
+- Execute exactly one tool per step and use its evidence before choosing the next step.
+- Start from the entity ids named in the alert, then expand through their relations.
+- Prefer following relations over searching again: an entity you already hold tells
+  you where to go next.
+- Search when you have a concrete string worth looking for and no edge leading to it.
+- Do not repeat an identical unhelpful or failed call.
+- Use only entity_id values actually returned by the alert or by a tool.
+- Submit only response artifacts supported by evidence. Do not invent entity ids.
+- Keep current_state evidence-focused and the remaining plan short.
+- Set task_completed=true exactly when selecting finish_investigation.
+- Finish before the investigation step budget is exhausted.
+""".strip()
+
+SYSTEM_PROMPTS = {"reference": REFERENCE_SYSTEM_PROMPT, "strategy": STRATEGY_SYSTEM_PROMPT}
+SYSTEM_PROMPT = STRATEGY_SYSTEM_PROMPT
+
 MAX_CONSECUTIVE_TASK_FAILURES = 2
 
 
@@ -110,6 +139,7 @@ class SimpleSGRAgent:
         *,
         max_steps: int = 100,
         recorder: RunRecorder | None = None,
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -117,6 +147,7 @@ class SimpleSGRAgent:
             llm: Structured step generator used for every investigation turn.
             max_steps: Maximum total tool calls allowed for one task.
             recorder: Optional experiment recorder for steps and task results.
+            system_prompt: System prompt used for every task.
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -126,6 +157,7 @@ class SimpleSGRAgent:
         self.llm = llm
         self.max_steps = max_steps
         self.recorder = recorder
+        self.system_prompt = system_prompt
         self._task_stats: dict[str, Any] = {}
 
     async def run(self, client: RemoteBenchmarkClient) -> AgentRunResult:
@@ -213,7 +245,7 @@ class SimpleSGRAgent:
 
         # The tool catalog is sent once here; tool feedback carries only per-call data.
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": render_json(

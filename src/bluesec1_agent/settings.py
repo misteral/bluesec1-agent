@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(validation_alias="LLM_BASE_URL", min_length=1)
     llm_api_key: SecretStr = Field(validation_alias="LLM_API_KEY", min_length=1)
     llm_default_model: str = Field(validation_alias="LLM_DEFAULT_MODEL", min_length=1)
+    agent_prompt: Literal["reference", "strategy"] = Field(
+        default="strategy",
+        validation_alias="AGENT_PROMPT",
+    )
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",
