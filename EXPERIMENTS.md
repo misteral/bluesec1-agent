@@ -16,6 +16,8 @@ Raw artifacts live in `runs/` (gitignored, contains platform data); this file is
    SCENARIO_RUNTIME_TOKEN="$(kc get BLUE_SEC)" LLM_API_KEY="$(kc get OPENROUTER_API_KEY)" \
      uv run --env-file .env bluesec1-agent --experiment exp-NNN-short-name
    ```
+   On the platform the run is labelled `<experiment>@<commit>` (`-dirty` if uncommitted) under
+   the stable `AGENT_NAME`; experiment, commit and prompt hash also go into run metadata.
 4. **Record.** `uv run python scripts/summarize_runs.py` prints the metrics row;
    `--scenarios` compares the same scenarios across runs (keyed by alert fingerprint,
    because task ids change on every lease). Fill in results and a one-line conclusion.

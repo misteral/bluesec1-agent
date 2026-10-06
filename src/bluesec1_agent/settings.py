@@ -36,10 +36,13 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=64,
     )
-    remote_run_label: str = Field(
-        default="bluesec1-agent",
+    # Unset by default: the CLI derives `<experiment>@<commit>` so every platform run
+    # maps to one EXPERIMENTS.md row. Set only to force a fixed label.
+    remote_run_label: str | None = Field(
+        default=None,
         validation_alias="REMOTE_RUN_LABEL",
         min_length=1,
+        max_length=255,
     )
     agent_name: str = Field(
         default="bluesec1-agent",

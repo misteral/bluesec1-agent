@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from bluesec1_agent.agent import SYSTEM_PROMPT, SimpleSGRAgent
 from bluesec1_agent.llm import OpenAIStructuredStepClient
 from bluesec1_agent.settings import Settings
-from bluesec1_agent.tracking import RunRecorder, sha256_text
+from bluesec1_agent.tracking import RunRecorder, git_state, sha256_text
 from bluesec1_client import (
     CompetitionClosedError,
     RemoteAuthenticationError,
@@ -75,19 +75,24 @@ async def run(args: argparse.Namespace) -> None:
         settings.scenario_runtime_verify_tls if args.verify_tls is None else args.verify_tls
     )
     arena = args.arena or settings.scenario_runtime_arena
+    git = git_state()
+    commit = f"{git['commit'] or 'nogit'}{'-dirty' if git['dirty'] else ''}"
+    run_label = args.run_label or settings.remote_run_label or f"{args.experiment}@{commit}"
+    system_prompt_sha = sha256_text(SYSTEM_PROMPT)
     recorder = None
     if not args.no_record:
         recorder = RunRecorder(
             args.experiment,
             {
                 "experiment": args.experiment,
+                "run_label": run_label,
                 "agent_name": agent_name,
                 "arena": arena,
                 "model": settings.llm_default_model,
                 "response_format": settings.llm_response_format,
                 "max_steps": settings.agent_max_steps,
                 "max_completion_tokens": settings.llm_max_completion_tokens,
-                "system_prompt_sha": sha256_text(SYSTEM_PROMPT),
+                "system_prompt_sha": system_prompt_sha,
             },
         )
         print(f"Recording run artifacts to {recorder.directory}", file=sys.stderr)
@@ -99,7 +104,7 @@ async def run(args: argparse.Namespace) -> None:
             endpoint=args.endpoint or settings.scenario_runtime_endpoint,
             token=args.token or settings.scenario_runtime_token.get_secret_value(),
             verify_tls=verify_tls,
-            run_label=args.run_label or settings.remote_run_label,
+            run_label=run_label,
             agent_name=agent_name,
             model_name=settings.llm_default_model,
             arena=arena,
@@ -107,6 +112,9 @@ async def run(args: argparse.Namespace) -> None:
                 "agent": agent_name,
                 "implementation": "structured-generation-scenario-runtime-grpc",
                 "model": settings.llm_default_model,
+                "experiment": args.experiment,
+                "commit": commit,
+                "system_prompt_sha": system_prompt_sha,
             },
         ) as client,
     ):
