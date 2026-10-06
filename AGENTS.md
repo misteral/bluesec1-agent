@@ -64,11 +64,17 @@ uv run ruff check .          # lint (line length 100, py311)
 uv run --env-file .env bluesec1-agent   # real run against the platform
 ```
 
-Platform constraints:
-- Only **one run in flight** per key; a second start is refused until the first finishes.
-- A real run consumes the whole task queue and counts toward the leaderboard — ask the user
-  before launching one. Use `SCENARIO_RUNTIME_ARENA=practice` for experiments when available.
-- `BLUESEC_AGENT_MAX_STEPS` is capped at 100; the LLM must support tool calling / structured output.
+Platform limits (organisers' announcement, received 2026-10-06; overrides README's "one run"):
+- ≤ **10 active runs** per participant at once; within a run, **one task at a time**.
+  → independent experiments can run in parallel as separate processes.
+- ≤ **10 run creations per 30 min** per competition stage.
+- ≤ **100 tool calls per task**; at the limit the task is closed automatically.
+- A run auto-closes after **15 min without client requests** (checked every minute, so 15–16 min).
+  It is an idle timeout, not a time limit — a slow LLM step longer than 15 min would lose the run.
+- Close runs explicitly on normal completion to free the slot (client or web UI).
+- Each run takes the whole task queue and is shown on the leaderboard.
+  The user delegated experiment decisions (2026-10-06): launch without asking, prefer free models.
+- The LLM must support tool calling / structured output.
 
 ## Experiments
 Every change to the agent is an experiment, tracked in `EXPERIMENTS.md` (protocol, metrics, log).

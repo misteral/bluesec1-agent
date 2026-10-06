@@ -4,6 +4,7 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
+from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
 from bluesec1_agent.llm import StructuredStepClient, render_json
 from bluesec1_agent.models import NextStep
 from bluesec1_agent.tracking import RunRecorder, scenario_fingerprint
@@ -163,7 +164,12 @@ class SimpleSGRAgent:
             raise ValueError("The runtime did not advertise finish_investigation.")
         if self.recorder is not None:
             self.recorder.record_observation(session.task_id, observation)
+        alert = parse_jsonish(observation.get("alert_text"))
+        registry = IdRegistry()
+        registry.learn(alert)
+        guard = CallGuard(registry)
 
+        # The tool catalog is sent once here; tool feedback carries only per-call data.
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {
@@ -171,7 +177,7 @@ class SimpleSGRAgent:
                 "content": render_json(
                     {
                         "instruction": "Investigate this alert and submit the correct response.",
-                        "initial_observation": observation,
+                        "alert": alert,
                         "available_tools": tool_specs,
                     }
                 ),
@@ -192,7 +198,12 @@ class SimpleSGRAgent:
             messages.append(
                 {
                     "role": "assistant",
-                    "content": step.plan_remaining_steps_brief[0],
+                    "content": render_json(
+                        {
+                            "current_state": step.current_state,
+                            "plan": step.plan_remaining_steps_brief,
+                        }
+                    ),
                     "tool_calls": [
                         {
                             "type": "function",
@@ -207,7 +218,11 @@ class SimpleSGRAgent:
             )
 
             server_result: TaskResult | None = None
-            if tool_name not in available_tools:
+            local_feedback = guard.check(tool_name, arguments)
+            if local_feedback is not None:
+                feedback = local_feedback
+                logger.info("Guard answered {} locally ({}).", tool_name, feedback["local_guard"])
+            elif tool_name not in available_tools:
                 feedback: dict[str, Any] = {
                     "status": "error",
                     "message": (
@@ -219,6 +234,7 @@ class SimpleSGRAgent:
             else:
                 response = await session.call_tool(tool_name, arguments)
                 feedback = self._tool_feedback(response)
+                guard.remember(tool_name, arguments, feedback)
                 server_result = response.task_result
                 logger.info(
                     "Tool {} returned status {}.{}",
@@ -249,6 +265,7 @@ class SimpleSGRAgent:
             "scenario_fp": scenario_fingerprint(observation),
             "llm_steps": 0,
             "error_calls": 0,
+            "guarded_calls": 0,
             "tool_counts": {},
             "total_tokens": 0,
             "cost_usd": 0.0,
@@ -272,8 +289,11 @@ class SimpleSGRAgent:
         tool_name = step.function.tool
         status = feedback.get("status")
         stats["llm_steps"] += 1
-        stats["tool_counts"][tool_name] = stats["tool_counts"].get(tool_name, 0) + 1
-        stats["error_calls"] += status != "ok"
+        if feedback.get("local_guard"):
+            stats["guarded_calls"] += 1
+        else:
+            stats["tool_counts"][tool_name] = stats["tool_counts"].get(tool_name, 0) + 1
+            stats["error_calls"] += status != "ok"
         stats["total_tokens"] += llm_stats.get("total_tokens", 0)
         stats["cost_usd"] += llm_stats.get("cost_usd", 0.0)
         stats["llm_latency_ms"] += llm_stats.get("latency_ms", 0)
@@ -294,6 +314,14 @@ class SimpleSGRAgent:
                 "status": status,
                 "error": error,
                 "result_chars": len(render_json(feedback.get("result"))),
+                "local_guard": feedback.get("local_guard"),
+                # Raw per-call evidence for analysis and offline replay (runs/ is gitignored).
+                "result": feedback.get("result"),
+                "extra": {
+                    key: feedback[key]
+                    for key in ("observation_extra", "info_extra")
+                    if key in feedback
+                },
                 "current_state": step.current_state,
                 "plan": step.plan_remaining_steps_brief,
                 "llm": llm_stats,
@@ -342,12 +370,28 @@ class SimpleSGRAgent:
         Returns:
             Compact evidence and lifecycle flags.
         """
-        return {
-            "tool_name": response.tool_name,
+        # The runtime returns the whole observation (alert + ~48k-char tool catalog) on every
+        # call; only `last_tool_result` and unknown extra keys are per-call evidence.
+        static_keys = {"available_tools", "alert_text", "last_tool_result"}
+        info_keys = {"tool_status", "tool_result", "error"}
+        result = response.info.get("tool_result")
+        if result is None:
+            result = response.observation.get("last_tool_result")
+        feedback: dict[str, Any] = {
             "status": response.info.get("tool_status", "unknown"),
-            "result": response.info.get("tool_result", response.observation),
-            "error": response.info.get("error"),
-            "reward": response.reward,
-            "terminated": response.terminated,
-            "truncated": response.truncated,
+            "result": parse_jsonish(result),
         }
+        if response.info.get("error"):
+            feedback["error"] = response.info["error"]
+        extra_observation = {
+            key: value for key, value in response.observation.items() if key not in static_keys
+        }
+        if extra_observation:
+            feedback["observation_extra"] = extra_observation
+        extra_info = {key: value for key, value in response.info.items() if key not in info_keys}
+        if extra_info:
+            feedback["info_extra"] = extra_info
+        if response.terminated or response.truncated:
+            feedback["terminated"] = response.terminated
+            feedback["truncated"] = response.truncated
+        return feedback
