@@ -45,11 +45,11 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 
 | Config | Runs | reward mean | spread |
 |---|---|---|---|
-| reference agent, deepseek-v4-pro | exp-001 | _pending_ | needs a second run |
+| reference agent, deepseek-v4-pro | exp-001 (stopped) | scores only on platform UI | not repeated — too expensive |
 
 ## Log
 
 | ID | Date | Commit | Model | Hypothesis | Change | reward | quality | effic. | calls | err% | $ | Conclusion |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | exp-000 | 2026-10-06 | 97ac821 | apodex/apodex-1.1-mini:free | reference agent runs on a free model | none | — | — | — | — | — | 0 | **Failed:** provider rejects `json_schema` → all 6 tasks aborted. Added `LLM_RESPONSE_FORMAT`, LLM preflight, stop after 2 consecutive failures. Free tier also hit upstream 429 — seen in a manual LLM-only preflight probe at ~22:01 after the run (not in the run log). |
-| exp-001 | 2026-10-06 | 97ac821* | deepseek/deepseek-v4-pro | establish the reference-agent baseline | none (format/preflight fixes only) | _pending_ | | | | ~0.53 (interim, 48/90 by 22:39) | | Interim: mostly get_relation one edge at a time; ~half of calls error; prompt grows to 22k–272k tokens/step (median ~113k). |
+| exp-001 | 2026-10-06 | 97ac821* | deepseek/deepseek-v4-pro | establish the reference-agent baseline | none (format/preflight fixes only) | n/a | | | | 49/110 ≈ 0.45 | ≈1.17 | **Stopped manually at 22:49 on budget** (7th task in progress, run closed cleanly). 6 tasks finished via finish_investigation; server scores not captured (pre-tracking code prints them only at run end — check the platform UI). ~14.5M tokens over 110 LLM steps; prompt grows to ~270k tokens/step; one step took 4 min. $ = OpenRouter key usage_daily on 2026-10-06 (includes exp-000 and probes). **Lesson:** the reference loop's full-history context is the cost driver; cap tokens/steps per task before any further run. |
