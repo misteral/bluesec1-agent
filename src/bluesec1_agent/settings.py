@@ -58,6 +58,10 @@ class Settings(BaseSettings):
         default="strategy",
         validation_alias="AGENT_PROMPT",
     )
+    agent_expand_entity: bool = Field(
+        default=False,
+        validation_alias="AGENT_EXPAND_ENTITY",
+    )
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",

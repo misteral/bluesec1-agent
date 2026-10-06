@@ -112,6 +112,35 @@ Investigation rules:
 SYSTEM_PROMPTS = {"reference": REFERENCE_SYSTEM_PROMPT, "strategy": STRATEGY_SYSTEM_PROMPT}
 SYSTEM_PROMPT = STRATEGY_SYSTEM_PROMPT
 
+EXPAND_ENTITY_SPEC: dict[str, Any] = {
+    "name": "expand_entity",
+    "description": (
+        "Agent-side helper (costs one platform `search` call): list relations touching an entity "
+        "with their type, direction, the entity on the other end and the timestamp, 10 per page. "
+        "Optionally restrict to one relation_type. Use it instead of fetching relation ids one by "
+        "one with get_relation."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "entity_id": {"type": "string"},
+            "relation_type": {"type": ["string", "null"], "description": "RelationType or null"},
+            "page_id": {"type": "integer", "minimum": 1, "default": 1},
+            "reasoning": {"type": "string"},
+        },
+        "required": ["entity_id", "reasoning"],
+    },
+}
+
+EXPAND_PROMPT_ADDON = """
+## Neighbourhood expansion
+Use `expand_entity(entity_id, relation_type?)` to see an entity's relations with types and the
+other ends in ONE call (10 per page; follow `next_page_id` only if needed). Prefer it over
+`get_relation` on bare ids. For busy hosts/users pass a relation_type (e.g. win_process_create,
+connected_to, logged_on_to, wrote_file, set_registry_value, created_service,
+created_scheduled_task, accessed_process) to get only what matters.
+""".strip()
+
 MAX_CONSECUTIVE_TASK_FAILURES = 2
 
 
@@ -140,6 +169,7 @@ class SimpleSGRAgent:
         max_steps: int = 100,
         recorder: RunRecorder | None = None,
         system_prompt: str = SYSTEM_PROMPT,
+        expand_entity: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -148,6 +178,7 @@ class SimpleSGRAgent:
             max_steps: Maximum total tool calls allowed for one task.
             recorder: Optional experiment recorder for steps and task results.
             system_prompt: System prompt used for every task.
+            expand_entity: Advertise the agent-side `expand_entity` helper (H-13).
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -157,7 +188,10 @@ class SimpleSGRAgent:
         self.llm = llm
         self.max_steps = max_steps
         self.recorder = recorder
-        self.system_prompt = system_prompt
+        self.expand_entity = expand_entity
+        self.system_prompt = (
+            f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
+        )
         self._task_stats: dict[str, Any] = {}
 
     async def run(self, client: RemoteBenchmarkClient) -> AgentRunResult:
@@ -236,6 +270,9 @@ class SimpleSGRAgent:
         }
         if "finish_investigation" not in available_tools:
             raise ValueError("The runtime did not advertise finish_investigation.")
+        if self.expand_entity and "search" in available_tools:
+            tool_specs = [*tool_specs, EXPAND_ENTITY_SPEC]
+            available_tools = {*available_tools, "expand_entity"}
         if self.recorder is not None:
             self.recorder.record_observation(session.task_id, observation)
         alert = parse_jsonish(observation.get("alert_text"))
@@ -306,8 +343,11 @@ class SimpleSGRAgent:
                 }
                 logger.warning("Rejected unavailable tool {} locally.", tool_name)
             else:
-                response = await session.call_tool(tool_name, arguments)
+                platform_tool, platform_arguments = self._platform_call(tool_name, arguments)
+                response = await session.call_tool(platform_tool, platform_arguments)
                 feedback = self._tool_feedback(response)
+                if tool_name == "expand_entity":
+                    feedback = self._neighbourhood(arguments["entity_id"], feedback)
                 guard.remember(tool_name, arguments, feedback)
                 server_result = response.task_result
                 logger.info(
@@ -323,7 +363,9 @@ class SimpleSGRAgent:
             messages.append(
                 {
                     "role": "tool",
-                    "content": render_json(feedback),
+                    "content": render_json(
+                        {key: value for key, value in feedback.items() if key != "raw_result"}
+                    ),
                     "tool_call_id": tool_call_id,
                 }
             )
@@ -331,6 +373,65 @@ class SimpleSGRAgent:
         raise RuntimeError(
             f"Agent hit the {self.max_steps}-step limit without finish_investigation."
         )
+
+    @staticmethod
+    def _platform_call(tool_name: str, arguments: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        """Translate agent-side tools into the platform call they cost."""
+        if tool_name != "expand_entity":
+            return tool_name, arguments
+        search: dict[str, Any] = {
+            "query": arguments["entity_id"],
+            "page_id": arguments.get("page_id", 1),
+            "reasoning": arguments["reasoning"],
+        }
+        if arguments.get("relation_type"):
+            search["scope"] = {"kind": "relation", "type": arguments["relation_type"]}
+        return "search", search
+
+    @staticmethod
+    def _neighbourhood(entity_id: str, feedback: dict[str, Any]) -> dict[str, Any]:
+        """Reduce a search result to the relations touching one entity."""
+        result = feedback.get("result")
+        if feedback.get("status") != "ok" or not isinstance(result, dict):
+            return feedback
+        neighbours = []
+        for item in result.get("results") or []:
+            if not isinstance(item, dict) or "source_id" not in item:
+                continue
+            outgoing = item.get("source_id") == entity_id
+            if not outgoing and item.get("target_id") != entity_id:
+                continue
+            properties = {
+                key: value
+                for key, value in (item.get("properties") or {}).items()
+                if value not in (None, "", [], {})
+            }
+            neighbours.append(
+                {
+                    "relation_id": item.get("id"),
+                    "type": item.get("type"),
+                    "direction": "out" if outgoing else "in",
+                    "other_entity_id": item.get("target_id" if outgoing else "source_id"),
+                    "timestamp": item.get("timestamp"),
+                    **({"properties": properties} if properties else {}),
+                }
+            )
+        compact: dict[str, Any] = {
+            "status": "ok",
+            "result": {
+                "entity_id": entity_id,
+                "relations": neighbours,
+                "next_page_id": result.get("next_page_id"),
+                "other_matches": len(result.get("results") or []) - len(neighbours),
+            },
+            "raw_result": result,
+        }
+        if not neighbours:
+            compact["note"] = (
+                "Search found no relations touching this entity id on this page; fall back to "
+                "get_entity relation ids and get_relation."
+            )
+        return compact
 
     @staticmethod
     def _new_task_stats(observation: dict[str, Any]) -> dict[str, Any]:
@@ -393,7 +494,7 @@ class SimpleSGRAgent:
                 "result": feedback.get("result"),
                 "extra": {
                     key: feedback[key]
-                    for key in ("observation_extra", "info_extra")
+                    for key in ("observation_extra", "info_extra", "raw_result")
                     if key in feedback
                 },
                 "current_state": step.current_state,

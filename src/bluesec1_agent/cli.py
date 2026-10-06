@@ -94,6 +94,7 @@ async def run(args: argparse.Namespace) -> None:
                 "max_steps": settings.agent_max_steps,
                 "max_completion_tokens": settings.llm_max_completion_tokens,
                 "agent_prompt": settings.agent_prompt,
+                "expand_entity": settings.agent_expand_entity,
                 "system_prompt_sha": system_prompt_sha,
             },
         )
@@ -125,6 +126,7 @@ async def run(args: argparse.Namespace) -> None:
             max_steps=settings.agent_max_steps,
             recorder=recorder,
             system_prompt=system_prompt,
+            expand_entity=settings.agent_expand_entity,
         ).run(client)
 
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))

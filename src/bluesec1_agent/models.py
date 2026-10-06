@@ -248,6 +248,16 @@ class SearchRequest(StrictModel):
     sort_order: Literal["ascending", "descending"] = "ascending"
 
 
+class ExpandEntityRequest(StrictModel):
+    """Agent-side tool: list an entity's relations with their types in one platform search."""
+
+    tool: Literal["expand_entity"]
+    entity_id: str
+    relation_type: RelationSearchType | None = None
+    page_id: int = Field(default=1, ge=1)
+    reasoning: ToolReasoning
+
+
 class GetEntityRequest(StrictModel):
     """Read one entity and the ids of its incoming and outgoing relations."""
 
@@ -351,7 +361,8 @@ class FinishInvestigationRequest(StrictModel):
 
 
 InvestigationFunction = (
-    SearchRequest
+    ExpandEntityRequest
+    | SearchRequest
     | GetEntityRequest
     | GetRelationRequest
     | GetADObjectInfoRequest

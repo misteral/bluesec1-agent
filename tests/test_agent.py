@@ -234,3 +234,50 @@ def test_recorder_persists_config_steps_tasks_and_summary(tmp_path: Path) -> Non
     assert summary["tasks"] == 1
     assert summary["completed"] == 1
     assert (recorder.directory / "observations.jsonl").exists()
+
+
+def test_expand_entity_translates_to_search_and_keeps_adjacent_relations() -> None:
+    """expand_entity costs one search call and returns only typed neighbours."""
+    tool, arguments = SimpleSGRAgent._platform_call(
+        "expand_entity",
+        {"entity_id": "p1", "relation_type": "win_process_create", "page_id": 1, "reasoning": "r"},
+    )
+    assert tool == "search"
+    assert arguments["query"] == "p1"
+    assert arguments["scope"] == {"kind": "relation", "type": "win_process_create"}
+
+    search_result = {
+        "current_page_id": 1,
+        "next_page_id": None,
+        "results": [
+            {
+                "kind": "relation",
+                "id": "r1",
+                "type": "win_process_create",
+                "source_id": "p1",
+                "target_id": "p2",
+                "timestamp": "t1",
+                "properties": {"x": None, "y": 1},
+            },
+            {
+                "kind": "relation",
+                "id": "r2",
+                "type": "parent_of",
+                "source_id": "p0",
+                "target_id": "p1",
+                "timestamp": "t0",
+                "properties": None,
+            },
+            {"kind": "entity", "id": "p9", "type": "windows_process", "properties": {}},
+        ],
+    }
+    feedback = SimpleSGRAgent._neighbourhood("p1", {"status": "ok", "result": search_result})
+
+    relations = feedback["result"]["relations"]
+    assert [(r["relation_id"], r["direction"], r["other_entity_id"]) for r in relations] == [
+        ("r1", "out", "p2"),
+        ("r2", "in", "p0"),
+    ]
+    assert relations[0]["properties"] == {"y": 1}
+    assert feedback["result"]["other_matches"] == 1
+    assert "note" not in feedback

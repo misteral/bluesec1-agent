@@ -18,6 +18,8 @@ GETTERS: dict[str, tuple[str, IdKind]] = {
     "get_ad_object_info": ("ad_object_id", "ad_object"),
 }
 TOOL_FOR_KIND: dict[IdKind, str] = {kind: tool for tool, (_, kind) in GETTERS.items()}
+# Agent-side tools that take an id are checked like getters but never suggested as the fix.
+GETTERS["expand_entity"] = ("entity_id", "entity")
 
 
 def parse_jsonish(value: Any) -> Any:
@@ -136,6 +138,7 @@ class CallGuard:
         """Cache a runtime result and learn ids from it."""
         self.cache[self.call_key(tool_name, arguments)] = feedback
         self.registry.learn(feedback.get("result"))
+        self.registry.learn(feedback.get("raw_result"))
         if feedback.get("status") == "ok":
             getter = GETTERS.get(tool_name)
             identifier = arguments.get(getter[0]) if getter else None
