@@ -80,7 +80,10 @@ Every change to the agent is an experiment, tracked in `EXPERIMENTS.md` (protoco
   per-scenario comparison (scenarios keyed by alert fingerprint; task ids change per lease).
 - Deltas within the noise floor (spread of repeated baseline runs) do not count.
 
-`origin` is the organisers' public repo — never push there.
+Remotes: `origin` = private `misteral/bluesec1-agent` (ours, push here); `upstream` = the
+organisers' public reference repo (pull updates only, never push).
+Commit and push after every significant result (finished experiment, working feature),
+with the ledger row updated in the same commit.
 
 ## Working rules
 - Make changes in `src/bluesec1_agent/`; treat `src/bluesec1_client/` as a vendored dependency.
