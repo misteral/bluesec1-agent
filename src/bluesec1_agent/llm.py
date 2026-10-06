@@ -165,13 +165,24 @@ class OpenAIStructuredStepClient:
         """
         for wait_index in range(RATE_LIMIT_MAX_WAITS + 1):
             try:
-                return await self._client.chat.completions.create(model=self.model, **kwargs)
+                response = await self._client.chat.completions.create(model=self.model, **kwargs)
             except RateLimitError as error:
                 if wait_index == RATE_LIMIT_MAX_WAITS:
                     raise
                 wait = rate_limit_wait_seconds(error)
                 logger.warning("LLM rate-limited; waiting {:.0f} s before retrying.", wait)
                 await asyncio.sleep(wait)
+                continue
+            # OpenRouter can answer 200 with an upstream error and no choices; that is transient.
+            if getattr(response, "choices", None) or wait_index == RATE_LIMIT_MAX_WAITS:
+                return response
+            wait = min(5.0 * (wait_index + 1), RATE_LIMIT_MAX_WAIT_SECONDS)
+            logger.warning(
+                "LLM response had no choices ({}); retrying in {:.0f} s.",
+                str(getattr(response, "model_extra", None) or "")[:300],
+                wait,
+            )
+            await asyncio.sleep(wait)
         raise AssertionError("unreachable")
 
     async def preflight(self) -> None:

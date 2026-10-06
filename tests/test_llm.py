@@ -242,3 +242,39 @@ def test_rate_limit_wait_uses_openrouter_reset_header() -> None:
     assert rate_limit_wait_seconds(error, now_ms=0) == 62.0
     no_header = RateLimitError("limited", response=httpx.Response(429, request=request), body={})
     assert rate_limit_wait_seconds(no_header, now_ms=0) == 30.0
+
+
+def test_create_retries_responses_without_choices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An upstream error returned as 200 without choices is retried, not fatal."""
+    import bluesec1_agent.llm as llm_module
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(llm_module.asyncio, "sleep", no_sleep)
+    good = valid_process_step().model_dump_json()
+    fake_openai = FakeOpenAI([good])
+    real_create = fake_openai.completions.create
+    calls = {"n": 0}
+
+    async def flaky_create(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return SimpleNamespace(choices=[], usage=None, model_extra={"error": "upstream"})
+        return await real_create(**kwargs)
+
+    fake_openai.completions.create = flaky_create
+    client = OpenAIStructuredStepClient(
+        base_url="https://llm.example/v1",
+        api_key="secret",
+        model="test-model",
+        timeout_seconds=10.0,
+        max_completion_tokens=1000,
+        max_retries=1,
+        client=cast(AsyncOpenAI, fake_openai),
+    )
+
+    step = asyncio.run(client.next_step([{"role": "system", "content": "Investigate."}]))
+
+    assert step.function.tool == "get_entity"
+    assert calls["n"] == 2
