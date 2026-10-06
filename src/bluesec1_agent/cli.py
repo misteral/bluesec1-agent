@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import signal
 import sys
 
 import truststore
@@ -132,8 +133,16 @@ async def run(args: argparse.Namespace) -> None:
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
 
 
+def _raise_keyboard_interrupt(signum: int, frame: object) -> None:
+    """Turn SIGTERM into the same graceful shutdown path as Ctrl+C (closes the run)."""
+    raise KeyboardInterrupt
+
+
 def main() -> None:
     """Parse arguments and execute the async remote agent."""
+    # Background launches (`nohup ... &`) ignore SIGINT; SIGTERM must still close the run.
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
         asyncio.run(run(build_parser().parse_args()))
     except RunCapacityExceededError as error:
