@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     llm_review_budget_usd: float = Field(
         default=0.5, validation_alias="LLM_REVIEW_BUDGET_USD", ge=0
     )
+    # Whole-run LLM spend cap (USD). The current task finishes; no new task is leased.
+    llm_run_budget_usd: float | None = Field(
+        default=None, validation_alias="LLM_RUN_BUDGET_USD", gt=0
+    )
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",

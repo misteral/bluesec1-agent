@@ -184,6 +184,7 @@ class SimpleSGRAgent:
         finish_review: bool = False,
         review_llm: StructuredStepClient | None = None,
         review_budget_usd: float = 0.0,
+        run_budget_usd: float | None = None,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -196,6 +197,7 @@ class SimpleSGRAgent:
             finish_review: Gate and review finish_investigation once before sending (H-03/04).
             review_llm: Optional stronger model for the review turn (H-08).
             review_budget_usd: Spend cap for `review_llm` across the run.
+            run_budget_usd: Stop leasing new tasks once total LLM spend reaches this (USD).
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -210,6 +212,8 @@ class SimpleSGRAgent:
         self.review_llm = review_llm
         self.review_budget_usd = review_budget_usd
         self.review_spent_usd = 0.0
+        self.run_budget_usd = run_budget_usd
+        self.run_spent_usd = 0.0
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -258,6 +262,16 @@ class SimpleSGRAgent:
                 consecutive_failures = 0
                 self._record_task(task_result)
             task_results.append(task_result)
+            self.run_spent_usd += self._task_stats.get("cost_usd", 0.0) + self._task_stats.get(
+                "review_model_cost_usd", 0.0
+            )
+            if self.run_budget_usd is not None and self.run_spent_usd >= self.run_budget_usd:
+                logger.warning(
+                    "Run LLM spend ${:.2f} reached the ${:.2f} budget; not leasing more tasks.",
+                    self.run_spent_usd,
+                    self.run_budget_usd,
+                )
+                break
 
         successful_tasks = sum(
             result.completion_reason in {"terminated", "truncated"} for result in task_results

@@ -110,6 +110,7 @@ async def run(args: argparse.Namespace) -> None:
                 "finish_review": settings.agent_finish_review,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
+                "run_budget_usd": settings.llm_run_budget_usd,
                 "system_prompt_sha": system_prompt_sha,
             },
         )
@@ -147,6 +148,7 @@ async def run(args: argparse.Namespace) -> None:
             finish_review=settings.agent_finish_review,
             review_llm=review_llm,
             review_budget_usd=settings.llm_review_budget_usd,
+            run_budget_usd=settings.llm_run_budget_usd,
         ).run(client)
     if review_llm is not None:
         await review_llm.aclose()
