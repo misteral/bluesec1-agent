@@ -71,6 +71,17 @@ async def run(args: argparse.Namespace) -> None:
         max_retries=settings.llm_max_step_retries,
         response_format=settings.llm_response_format,
     )
+    review_llm = None
+    if settings.llm_review_model:
+        review_llm = OpenAIStructuredStepClient(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key.get_secret_value(),
+            model=settings.llm_review_model,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_completion_tokens=settings.llm_max_completion_tokens,
+            max_retries=settings.llm_max_step_retries,
+            response_format=settings.llm_response_format,
+        )
     agent_name = args.agent_name or settings.agent_name
     verify_tls = (
         settings.scenario_runtime_verify_tls if args.verify_tls is None else args.verify_tls
@@ -97,12 +108,16 @@ async def run(args: argparse.Namespace) -> None:
                 "agent_prompt": settings.agent_prompt,
                 "expand_entity": settings.agent_expand_entity,
                 "finish_review": settings.agent_finish_review,
+                "review_model": settings.llm_review_model,
+                "review_budget_usd": settings.llm_review_budget_usd,
                 "system_prompt_sha": system_prompt_sha,
             },
         )
         print(f"Recording run artifacts to {recorder.directory}", file=sys.stderr)
     # Fail before CreateRun: a broken provider would otherwise abort every leased task.
     await llm.preflight()
+    if review_llm is not None:
+        await review_llm.preflight()
     async with (
         llm,
         RemoteBenchmarkClient(
@@ -130,7 +145,11 @@ async def run(args: argparse.Namespace) -> None:
             system_prompt=system_prompt,
             expand_entity=settings.agent_expand_entity,
             finish_review=settings.agent_finish_review,
+            review_llm=review_llm,
+            review_budget_usd=settings.llm_review_budget_usd,
         ).run(client)
+    if review_llm is not None:
+        await review_llm.aclose()
 
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
 

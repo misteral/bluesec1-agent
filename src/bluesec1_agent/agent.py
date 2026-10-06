@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
 from bluesec1_agent.llm import StructuredStepClient, render_json
-from bluesec1_agent.models import NextStep
+from bluesec1_agent.models import FinishInvestigationRequest, NextStep
 from bluesec1_agent.review import EntityBook, gate_issues, review_message, sanitize_submission
 from bluesec1_agent.tracking import RunRecorder, scenario_fingerprint
 from bluesec1_client import (
@@ -182,6 +182,8 @@ class SimpleSGRAgent:
         system_prompt: str = SYSTEM_PROMPT,
         expand_entity: bool = False,
         finish_review: bool = False,
+        review_llm: StructuredStepClient | None = None,
+        review_budget_usd: float = 0.0,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -192,6 +194,8 @@ class SimpleSGRAgent:
             system_prompt: System prompt used for every task.
             expand_entity: Advertise the agent-side `expand_entity` helper (H-13).
             finish_review: Gate and review finish_investigation once before sending (H-03/04).
+            review_llm: Optional stronger model for the review turn (H-08).
+            review_budget_usd: Spend cap for `review_llm` across the run.
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -203,6 +207,9 @@ class SimpleSGRAgent:
         self.recorder = recorder
         self.expand_entity = expand_entity
         self.finish_review = finish_review
+        self.review_llm = review_llm
+        self.review_budget_usd = review_budget_usd
+        self.review_spent_usd = 0.0
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -329,7 +336,25 @@ class SimpleSGRAgent:
                     {"role": "user", "content": FORCE_FINISH_MESSAGE.format(reason=reason)}
                 )
                 self._task_stats["forced_finish"] = reason
-            step = await self.llm.next_step(messages, final=reason is not None or review_pending)
+            step_llm = self.llm
+            if (
+                review_pending
+                and self.review_llm is not None
+                and self.review_spent_usd < self.review_budget_usd
+            ):
+                step_llm = self.review_llm
+            step = await step_llm.next_step(messages, final=reason is not None or review_pending)
+            if step_llm is not self.llm:
+                review_cost = float(
+                    (getattr(step_llm, "last_step_stats", None) or {}).get("cost_usd", 0.0)
+                )
+                self.review_spent_usd += review_cost
+                self._task_stats["review_model_cost_usd"] = review_cost
+                self._task_stats["review_model_verdict"] = (
+                    step.function.submission.verdict
+                    if isinstance(step.function, FinishInvestigationRequest)
+                    else None
+                )
             review_pending = False
             llm_stats = dict(getattr(self.llm, "last_step_stats", None) or {})
             tool_name = step.function.tool

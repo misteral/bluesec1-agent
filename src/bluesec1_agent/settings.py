@@ -66,6 +66,12 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="AGENT_FINISH_REVIEW",
     )
+    # H-08: a stronger model takes the single finish-review turn. Empty = use the main model.
+    llm_review_model: str | None = Field(default=None, validation_alias="LLM_REVIEW_MODEL")
+    # Hard cap on provider spend for the review model per run (USD, from usage.cost).
+    llm_review_budget_usd: float = Field(
+        default=0.5, validation_alias="LLM_REVIEW_BUDGET_USD", ge=0
+    )
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",

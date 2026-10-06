@@ -349,3 +349,18 @@ def test_guard_redirects_wrong_kind_and_repeated_get_entity() -> None:
     assert guard.redirect(
         "get_entity", {"entity_id": "p1", "reasoning": "x"}, expand_enabled=True
     ) == ("expand_entity", {"entity_id": "p1", "page_id": 1, "reasoning": "x"})
+
+
+def test_review_turn_uses_review_model_within_budget() -> None:
+    """H-08: the single review turn goes to the stronger model; the rest stays on the main one."""
+    plan = two_step_plan()
+    main = FakeStepClient([plan[0], plan[1]])
+    reviewer = FakeStepClient([plan[1]])
+    agent = SimpleSGRAgent(main, finish_review=True, review_llm=reviewer, review_budget_usd=1.0)
+
+    result = asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(FakeSession()))))
+
+    assert result.successful_tasks == 1
+    assert len(main.requests) == 2
+    assert len(reviewer.requests) == 1
+    assert "REVIEW BEFORE SUBMITTING" in reviewer.requests[0][-1]["content"]
