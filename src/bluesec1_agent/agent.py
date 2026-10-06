@@ -145,7 +145,8 @@ created_scheduled_task, accessed_process) to get only what matters.
 MAX_CONSECUTIVE_TASK_FAILURES = 2
 # A small model can loop on a guarded call forever (exp-004: 82 identical repeats). After this
 # many locally answered calls in a row, the next turn may only finish the investigation.
-MAX_CONSECUTIVE_GUARDED = 3
+# 3 was too eager: in exp-006 it forced verdicts after 1-2 real calls.
+MAX_CONSECUTIVE_GUARDED = 5
 # The runtime closes a task after 100 tool calls; finish before that with what we know.
 PLATFORM_CALL_BUDGET = 95
 FORCE_FINISH_MESSAGE = (
@@ -389,6 +390,12 @@ class SimpleSGRAgent:
                     )
                     continue
                 arguments["submission"] = sanitize_submission(submission, book, seen_ids)
+            redirected_from = None
+            redirect = guard.redirect(tool_name, arguments, expand_enabled=self.expand_entity)
+            if redirect is not None and redirect[0] in available_tools:
+                redirected_from = tool_name
+                tool_name, arguments = redirect
+                logger.info("Guard redirected {} to {}.", redirected_from, tool_name)
             local_feedback = guard.check(tool_name, arguments)
             consecutive_guarded = consecutive_guarded + 1 if local_feedback is not None else 0
             if local_feedback is not None:
@@ -410,6 +417,11 @@ class SimpleSGRAgent:
                 feedback = self._tool_feedback(response)
                 if tool_name == "expand_entity":
                     feedback = self._neighbourhood(arguments["entity_id"], feedback)
+                if redirected_from is not None:
+                    feedback["note"] = (
+                        f"Your {redirected_from} call was a repeat or used the wrong id kind; "
+                        f"the guard ran {tool_name}({render_json(arguments)}) instead."
+                    )
                 guard.remember(tool_name, arguments, feedback)
                 book.learn(feedback.get("result"))
                 book.learn(feedback.get("raw_result"))
@@ -420,7 +432,9 @@ class SimpleSGRAgent:
                     feedback.get("status", "unknown"),
                     f" Error: {feedback['error']}" if feedback.get("error") else "",
                 )
-            self._record_step(session.task_id, step_index, step, arguments, feedback, llm_stats)
+            self._record_step(
+                session.task_id, step_index, step, arguments, feedback, llm_stats, tool_name
+            )
             if server_result is not None:
                 return TaskResult.model_validate(server_result)
 
@@ -523,10 +537,11 @@ class SimpleSGRAgent:
         arguments: dict[str, Any],
         feedback: dict[str, Any],
         llm_stats: dict[str, Any],
+        tool_name: str | None = None,
     ) -> None:
         """Update per-task counters and persist one step when a recorder is set."""
         stats = self._task_stats
-        tool_name = step.function.tool
+        tool_name = tool_name or step.function.tool
         status = feedback.get("status")
         stats["llm_steps"] += 1
         if feedback.get("local_guard"):

@@ -103,6 +103,36 @@ class CallGuard:
         relevant = {key: value for key, value in arguments.items() if key != "reasoning"}
         return f"{tool_name}:{json.dumps(relevant, sort_keys=True, default=str)}"
 
+    def redirect(
+        self, tool_name: str, arguments: dict[str, Any], *, expand_enabled: bool = False
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Return the call the model evidently meant, instead of rejecting a wasted one.
+
+        exp-006: the model repeated an identical `get_entity` 3× while writing that it needed
+        `expand_entity`, and passed entity ids to `get_relation`. Rejections did not change its
+        behaviour, so the obvious intended call is executed instead.
+        """
+        reasoning = arguments.get("reasoning", "redirected by the call guard")
+        getter = GETTERS.get(tool_name)
+        if getter is not None:
+            argument, expected = getter
+            identifier = arguments.get(argument)
+            actual = self.registry.kind_of(identifier) if isinstance(identifier, str) else None
+            if actual is not None and actual != expected:
+                right_tool = TOOL_FOR_KIND[actual]
+                fixed = {GETTERS[right_tool][0]: identifier, "reasoning": reasoning}
+                if self.call_key(right_tool, fixed) not in self.cache:
+                    return right_tool, fixed
+        if (
+            expand_enabled
+            and tool_name == "get_entity"
+            and self.call_key(tool_name, arguments) in self.cache
+        ):
+            expand = {"entity_id": arguments.get("entity_id"), "page_id": 1, "reasoning": reasoning}
+            if self.call_key("expand_entity", expand) not in self.cache:
+                return "expand_entity", expand
+        return None
+
     def check(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
         """Return local feedback for a call that must not reach the runtime, else None."""
         if tool_name == "finish_investigation":

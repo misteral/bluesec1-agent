@@ -308,9 +308,9 @@ def test_agent_forces_finish_after_repeated_guarded_calls() -> None:
     result = asyncio.run(SimpleSGRAgent(llm).run(cast(RemoteBenchmarkClient, FakeClient(session))))
 
     assert result.successful_tasks == 1
-    # One real call, three guarded duplicates, then the forced terminal turn.
+    # One real call, five guarded duplicates, then the forced terminal turn.
     assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
-    assert llm.final_flags == [False, False, False, False, True]
+    assert llm.final_flags == [False] * 6 + [True]
     assert "Stop investigating now" in llm.requests[-1][-1]["content"]
 
 
@@ -328,3 +328,24 @@ def test_finish_review_holds_the_first_finish_for_one_review_turn() -> None:
     review_turn = agent.llm.requests[-1][-1]
     assert review_turn["role"] == "tool"
     assert "REVIEW BEFORE SUBMITTING" in review_turn["content"]
+
+
+def test_guard_redirects_wrong_kind_and_repeated_get_entity() -> None:
+    """Evident intent is executed instead of rejected."""
+    from bluesec1_agent.guard import CallGuard, IdRegistry
+
+    registry = IdRegistry()
+    registry.learn(
+        {"trigger_entities": [{"id": "p1", "type": "windows_process", "properties": {}}]}
+    )
+    guard = CallGuard(registry)
+
+    assert guard.redirect("get_relation", {"relation_id": "p1", "reasoning": "r"}) == (
+        "get_entity",
+        {"entity_id": "p1", "reasoning": "r"},
+    )
+    guard.remember("get_entity", {"entity_id": "p1", "reasoning": "r"}, {"status": "ok"})
+    assert guard.redirect("get_entity", {"entity_id": "p1", "reasoning": "x"}) is None
+    assert guard.redirect(
+        "get_entity", {"entity_id": "p1", "reasoning": "x"}, expand_enabled=True
+    ) == ("expand_entity", {"entity_id": "p1", "page_id": 1, "reasoning": "x"})
