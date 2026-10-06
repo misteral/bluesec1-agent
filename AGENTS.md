@@ -72,6 +72,8 @@ Platform constraints:
 
 ## Experiments
 Every change to the agent is an experiment, tracked in `EXPERIMENTS.md` (protocol, metrics, log).
+Ideas waiting to be tested live in `HYPOTHESES.md` (backlog H-NN with priority and sources);
+pick from there, then open an `exp-NNN` row.
 - Write the hypothesis and expected metric change in the ledger **before** launching.
 - One variable per experiment; commit before the run; launch with `--experiment exp-NNN-name`.
 - Each run writes `runs/<timestamp>-<experiment>/` (`config.json`, `steps.jsonl` with error
