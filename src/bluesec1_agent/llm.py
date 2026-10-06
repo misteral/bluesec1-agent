@@ -186,22 +186,28 @@ class OpenAIStructuredStepClient:
         raise AssertionError("unreachable")
 
     async def preflight(self) -> None:
-        """Send one tiny request with the configured response format.
+        """Run one tiny, schema-consistent step with the configured response format.
 
         Provider-side rejections (unsupported model, response format, credentials)
-        surface here, before a remote run is created and tasks are leased.
+        surface here, before a remote run is created and tasks are leased. The request is a
+        real NextStep so a strict schema and the prompt never contradict each other
+        (a contradictory ping made a reasoning model stall for minutes).
 
         Raises:
+            NextStepRequestError: If the provider cannot produce a valid step.
             openai.APIError: If the provider rejects the request.
         """
-        await self._create(
-            messages=[
-                {"role": "system", "content": 'Reply with the JSON object {"ok": true}.'},
-                {"role": "user", "content": "ping"},
-            ],
-            response_format=cast(ResponseFormatJSONSchema, self._response_format),
-            max_completion_tokens=self.max_completion_tokens,
-        )
+        saved_tokens = self.max_completion_tokens
+        self.max_completion_tokens = min(saved_tokens, 4000)
+        try:
+            await self.next_step(
+                [
+                    {"role": "system", "content": "You are a SOC analyst. Tools: get_entity."},
+                    {"role": "user", "content": "Alert on entity proc-1. Choose the next step."},
+                ]
+            )
+        finally:
+            self.max_completion_tokens = saved_tokens
 
     async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
         """Return one valid `NextStep`, repairing malformed replies when possible.
