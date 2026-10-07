@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import Any, Literal, Protocol, Self, cast
 
 from loguru import logger
-from openai import AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, RateLimitError
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import ValidationError
@@ -171,6 +171,15 @@ class OpenAIStructuredStepClient:
                     raise
                 wait = rate_limit_wait_seconds(error)
                 logger.warning("LLM rate-limited; waiting {:.0f} s before retrying.", wait)
+                await asyncio.sleep(wait)
+                continue
+            except (APIConnectionError, APITimeoutError) as error:
+                # Network loss (e.g. the laptop changed networks): wait instead of aborting the
+                # task. Total wait stays under the runtime's 15-minute idle timeout.
+                if wait_index == RATE_LIMIT_MAX_WAITS:
+                    raise
+                wait = min(15.0 * (wait_index + 1), RATE_LIMIT_MAX_WAIT_SECONDS)
+                logger.warning("LLM unreachable ({}); retrying in {:.0f} s.", error, wait)
                 await asyncio.sleep(wait)
                 continue
             # OpenRouter can answer 200 with an upstream error and no choices; that is transient.
@@ -392,11 +401,11 @@ def parse_next_step_payload(raw_content: str) -> NextStep:
     except ValidationError as exc:
         raise ValueError("Model returned invalid NextStep JSON.") from exc
 
+    # task_completed is redundant with the chosen function; a mismatch (exp-009 lost a task to
+    # a finish with task_completed=false) is corrected instead of rejected.
     is_finish = isinstance(step.function, FinishInvestigationRequest)
     if step.task_completed != is_finish:
-        raise ValueError(
-            "task_completed must be true exactly when finish_investigation is selected."
-        )
+        step = step.model_copy(update={"task_completed": is_finish})
     return step
 
 

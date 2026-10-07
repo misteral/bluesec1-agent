@@ -94,12 +94,11 @@ def test_structured_client_repairs_malformed_response() -> None:
     assert original_messages == [{"role": "system", "content": "Investigate."}]
 
 
-def test_parser_rejects_inconsistent_completion_flag() -> None:
-    """A non-terminal function cannot claim that the investigation is complete."""
+def test_parser_corrects_inconsistent_completion_flag() -> None:
+    """The redundant task_completed flag follows the chosen function instead of failing."""
     payload = valid_process_step().model_copy(update={"task_completed": True}).model_dump_json()
 
-    with pytest.raises(ValueError, match="task_completed"):
-        parse_next_step_payload(payload)
+    assert parse_next_step_payload(payload).task_completed is False
 
 
 def test_response_schema_requires_nullable_tool_fields() -> None:
