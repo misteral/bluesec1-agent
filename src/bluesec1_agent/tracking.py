@@ -163,6 +163,8 @@ def summarize_tasks(tasks: list[dict[str, Any]], config: dict[str, Any]) -> dict
         "mean_tool_calls": _mean("tool_calls"),
         "error_call_rate": round(error_calls / tool_calls, 4) if tool_calls else 0.0,
         "total_tokens": int(_sum("total_tokens")),
-        "total_cost_usd": _sum("cost_usd"),
+        # Review-model spend (H-08) is recorded per task separately; include it in the total.
+        "review_cost_usd": _sum("review_model_cost_usd"),
+        "total_cost_usd": round(_sum("cost_usd") + _sum("review_model_cost_usd"), 4),
         "wall_time_seconds": _sum("wall_time_seconds"),
     }
