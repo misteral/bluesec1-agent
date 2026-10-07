@@ -58,6 +58,12 @@ FINISH_LABEL = (
     "finish: the evidence already explains the alerted activity (origin, actions, effects); "
     "stop investigating"
 )
+SUFFICIENT_CRITERIA = {
+    "true": "Origin, actions and effects of the alerted activity are already visible, so a verdict "
+    "and the list of involved entities can be given now.",
+    "false": "Key parts are unexplored: who launched it, what it launched or wrote, persistence, "
+    "network or logons.",
+}
 ATTACK_CRITERIA = {
     "true": "The evidence shows attacker behaviour (malicious execution, persistence, credential "
     "access, lateral movement, exfiltration, destruction) linked to the alert.",
@@ -87,6 +93,8 @@ class JevNavigatorAgent(SimpleSGRAgent):
         llm: StructuredStepClient | None = None,
         call_budget: int = 20,
         attack_threshold: float = 0.35,
+        stop_threshold: float | None = None,
+        min_calls: int = 3,
         recorder: RunRecorder | None = None,
         run_budget_usd: float | None = None,
     ) -> None:
@@ -100,6 +108,10 @@ class JevNavigatorAgent(SimpleSGRAgent):
             attack_threshold: P(attack) from Jev above which `jev_only` says malicious. Set
                 below 0.5 because a wrong benign verdict costs the most (quality 0, negative
                 reward), not tuned to dev scores.
+            stop_threshold: If set, each navigation call also asks Jev whether the evidence is
+                sufficient; stop when P(sufficient) reaches this after `min_calls` calls.
+                exp-010 showed Jev almost never picks `finish` and spends the whole budget.
+            min_calls: Minimum platform calls before the sufficiency stop may trigger.
             recorder: Optional experiment recorder.
             run_budget_usd: Stop leasing new tasks once total spend reaches this.
         """
@@ -114,6 +126,8 @@ class JevNavigatorAgent(SimpleSGRAgent):
         self.final_mode = final_mode
         self.call_budget = call_budget
         self.attack_threshold = attack_threshold
+        self.stop_threshold = stop_threshold
+        self.min_calls = min_calls
 
     # ------------------------------------------------------------------ task loop
 
@@ -132,17 +146,22 @@ class JevNavigatorAgent(SimpleSGRAgent):
             candidates = state.candidates()
             options = {f"c{i:02d}": label for i, (_, label) in enumerate(candidates)}
             options["finish"] = FINISH_LABEL
-            answers = await self.jev.decide(
-                state.jev_state(calls, self.call_budget),
-                {
-                    "next": {
-                        "type": "choice",
-                        "instructions": NAVIGATION_QUESTION,
-                        "criteria": options,
-                    }
-                },
-            )
+            questions: dict[str, dict[str, Any]] = {
+                "next": {"type": "choice", "instructions": NAVIGATION_QUESTION, "criteria": options}
+            }
+            if self.stop_threshold is not None and calls >= self.min_calls:
+                questions["enough"] = {
+                    "type": "noul",
+                    "instructions": "Is the gathered evidence sufficient to decide now?",
+                    "criteria": SUFFICIENT_CRITERIA,
+                }
+            answers = await self.jev.decide(state.jev_state(calls, self.call_budget), questions)
             decision = answers["next"]
+            enough = float((answers.get("enough") or {}).get("noul") or 0.0)
+            if self.stop_threshold is not None and enough >= self.stop_threshold:
+                logger.info("Jev: evidence sufficient ({:.2f}) after {} calls.", enough, calls)
+                self._task_stats["jev_stop"] = enough
+                break
             choice = decision.get("choice")
             self._task_stats["llm_steps"] += 1
             if choice == "finish" or choice not in options:

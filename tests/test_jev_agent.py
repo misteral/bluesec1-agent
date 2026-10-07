@@ -159,3 +159,30 @@ def test_jev_only_benign_cites_set_fields_only() -> None:
     assert submission["verdict"] == "benign"
     for evidence in submission["legitimacy_evidence"]:
         assert "signed" not in evidence["property_fields"]
+
+
+class NeverFinishJev(FakeJev):
+    """Always picks the first candidate (like exp-010) but reports sufficient evidence."""
+
+    async def decide(self, state: dict[str, Any], questions: dict[str, Any]) -> dict[str, Any]:
+        if "next" in questions:
+            self.questions.append(questions)
+            answers: dict[str, Any] = {"next": {"type": "choice", "choice": "c00"}}
+            if "enough" in questions:
+                answers["enough"] = {"type": "noul", "noul": 0.9}
+            return answers
+        return await super().decide(state, questions)
+
+
+def test_sufficiency_stop_ends_navigation_after_min_calls() -> None:
+    """With a stop threshold, a Jev that never chooses finish still stops early."""
+    session, jev = FakeSession(), NeverFinishJev(0.9)
+    agent = JevNavigatorAgent(
+        cast(JevClient, jev), final_mode="jev_only", stop_threshold=0.7, min_calls=3
+    )
+    asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    platform_calls = [name for name, _ in session.calls if name != "finish_investigation"]
+    assert len(platform_calls) == 3
+    assert "enough" not in jev.questions[0]
+    assert "enough" in jev.questions[3]

@@ -108,6 +108,7 @@ async def run(args: argparse.Namespace) -> None:
                 "jev_attack_threshold": (
                     settings.jev_attack_threshold if settings.agent_kind == "jev_only" else None
                 ),
+                "jev_stop_threshold": settings.jev_stop_threshold,
                 "run_label": run_label,
                 "agent_name": agent_name,
                 "arena": arena,
@@ -175,6 +176,7 @@ async def run(args: argparse.Namespace) -> None:
                 llm=llm if settings.agent_kind == "jev_llm" else None,
                 call_budget=settings.jev_call_budget,
                 attack_threshold=settings.jev_attack_threshold,
+                stop_threshold=settings.jev_stop_threshold,
                 recorder=recorder,
                 run_budget_usd=settings.llm_run_budget_usd,
             )

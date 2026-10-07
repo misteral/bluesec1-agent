@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     jev_attack_threshold: float = Field(
         default=0.35, validation_alias="JEV_ATTACK_THRESHOLD", gt=0, lt=1
     )
+    # Sufficiency stop for Jev navigation; unset = only an explicit `finish` choice stops.
+    jev_stop_threshold: float | None = Field(
+        default=None, validation_alias="JEV_STOP_THRESHOLD", gt=0, lt=1
+    )
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
