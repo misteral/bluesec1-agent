@@ -184,7 +184,14 @@ class JevNavigatorAgent(SimpleSGRAgent):
                 float(decision.get("confidence") or 0.0),
                 feedback.get("status"),
             )
-            self._record_jev_step(session.task_id, step_index, tool, arguments, feedback, decision)
+            self._record_jev_step(
+                session.task_id,
+                step_index,
+                tool,
+                arguments,
+                feedback,
+                {**decision, "enough": enough},
+            )
             if response.task_result is not None:
                 return TaskResult.model_validate(response.task_result)
 
@@ -365,6 +372,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
                     "choice": decision.get("choice"),
                     "confidence": decision.get("confidence"),
                     "top": sorted(probabilities.items(), key=lambda kv: -kv[1])[:3],
+                    "enough": decision.get("enough"),
                 },
             }
         )
