@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
+RUN_TASKS = 30  # tasks per competition run (organisers, 2026-10-06)
 
 
 def sha256_text(text: str) -> str:
@@ -126,7 +127,15 @@ def summarize_tasks(tasks: list[dict[str, Any]], config: dict[str, Any]) -> dict
 
     tool_calls = _sum("tool_calls")
     error_calls = _sum("error_calls")
+    completed_quality = sum(
+        float(task.get("quality_score") or 0.0)
+        for task in tasks
+        if task.get("completion_reason") == "terminated"
+    )
     return {
+        # Primary metric: the platform score tracks Σ quality / 30 with failed tasks as 0
+        # (ratio ≈ 0.29 across 5 runs on 2026-10-07), not the per-task total_reward.
+        "q30": round(completed_quality / RUN_TASKS, 4),
         "run_id": config.get("run_id"),
         "model": config.get("model"),
         "commit": config.get("commit"),

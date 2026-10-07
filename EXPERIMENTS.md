@@ -34,9 +34,14 @@ Raw artifacts live in `runs/` (gitignored, contains platform data); this file is
 
 ## Metrics
 
+The leaderboard ranks the best run on the **credit (зачёт) arena, opening 2026-10-10**; until then every run is on the training arena.
+
+
 | Metric | Source | Meaning |
 |---|---|---|
-| reward | server `total_reward`, mean per task | the competition score — primary |
+| **q30** | Σ server `quality_score` over completed tasks / 30 (failed = 0) | **primary** — the platform's run score tracks it (platform score ≈ 0.29 × q30 × 100 across exp-008…012); lost tasks cost directly |
+| platform | score shown in the competition cabinet | ground truth; copy it into the conclusion when available |
+| reward | server `total_reward`, mean per task | per-task reward signal (can be negative); **not** the platform score |
 | quality | server `quality_score` | verdict + artifact completeness |
 | effic. | server `efficiency_score` | tool-call economy |
 | calls | server `tool_calls` | tool calls per task |
