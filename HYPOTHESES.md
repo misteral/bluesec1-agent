@@ -110,6 +110,22 @@ Division of labour from data: mimo is better at the verdict (0–2 wrong per run
 | H-35 | P2 | **Jev completeness check for malicious:** Jev scores every observed entity attacker/benign; add confident attacker entities the LLM missed, drop confident benign ones. Jev role accuracy unproven. | Jev bench first |
 | H-36 | P3 | **Jev disagreement → targeted extra investigation:** LLM says benign but Jev P(attack) high → 2–3 more calls on disputed evidence (never an override; Jev's verdicts are worse). | mimo |
 
+
+## soc-expert consultation 2 (2026-10-08): malicious payloads and verdict errors
+
+45 correct malicious mimo tasks (exp-013/018/020) + all Q=0 tasks (mimo and Jev), 10 alert families; a principle needed ≥3 families. Headline: malicious payloads lose more on **extra rows than on missing ones** (`artifact_observed` ≈ −0.023 Q/row; cmdlet-invocation rows r −0.53, network-connection rows r −0.35 within template); account/source-host/parent presence ≈ no effect. The review prompt's "EVERY attacker-related entity" inflated payloads (rows ↑ in 23/45 tasks).
+
+| ID | P | Principle | Families | Test |
+|---|---|---|---|---|
+| H-37 | P1 | **Telemetry records are not IR artifacts:** drop `powershell_cmdlet_invocation` and `network_connection` rows from malicious payloads; a script stays only as a file on disk. Contract: connection telemetry lives on relations. | 5 | Jev bench, then mimo |
+| H-38 | P1 | **Attacker infrastructure = the external endpoint node, not the connection record:** replace a `network_connection` row by its external endpoint entity (kind `network_block` vs `other` to compare). Fixes a prompt/gate conflict (prompt: "connections are not artifacts"; gate: network_block allowed on connections, forbidden on hosts). | 4 | Jev bench |
+| H-39 | P1 | **Before benign, check the host in the alert window and who is on the other end of inbound connections** (alert = host + time; browser/kernel/svchost can merely host the attack; periodic inbound auth from one source = brute force/beacon, not monitoring). Prompt + one-shot gate: benign draft with no host-window search and unexplored inbound sources → back to the agent once. | 3 (borderline) | mimo |
+| H-40 | P1 | **Review as a precision checklist, not "add everything":** one row per real object per category (initial access, account, other hosts, persistence, tools, modified data, external node); remove telemetry and unrelated user activity. | all | mimo |
+| H-41 | P2 | **Close both ends of the chain:** backwards (email, attachment, document, UAC hijack, session source host) and forwards (every `wrote_file` of a dropper/encryptor; modified data `file_observed`, tools `file_to_delete`). Measured effect ≤ +0.05 in remote-session family. | 4 | mimo |
+| H-42 | P3 | **Red flags:** business-data tampering (payment-detail UPDATEs, in-place overwrites), repeated inbound authentication attempts; periodicity is not legitimacy. | 3 | prompt (insurance) |
+
+Rejected as single-scenario: the UAC-bypass→archive→cleanup variant; Jev false positives on a maintenance task, AD console, IR triage, SQL service start, NETLOGON script; EDR agent with an lsass handle.
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every
