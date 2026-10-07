@@ -75,8 +75,8 @@ Two read-only subagents analysed runs exp-002…exp-017. Advisor proposals were 
 | ID | P | Hypothesis | Verdict / plan |
 |---|---|---|---|
 | H-21 | P1 | **Credit-day best-of-N:** run the frozen best config several times in parallel on the credit arena and keep the best run (leaderboard ranks the best run; ≤10 parallel runs). Free variance, zero overfitting. | ADD, top priority — confirm the credit-arena run rules with the organisers |
-| H-22 | P1 | **Noise floor for the mimo agent:** replicate exp-013 unchanged (verdicts flip across runs in some scenarios). | exp-018 |
-| H-23 | P1 | **Payload v2:** no `artifact_observed`; benign alert-entities first, ≤1 relation, ≤3×4. Bench on Jev (near-deterministic), then port to mimo. | exp-019 (Jev) |
+| H-22 | P1 | **Noise floor for the mimo agent:** replicate exp-013 unchanged (verdicts flip across runs in some scenarios). | exp-018: **done** — mimo noise ≈ 0.25 points |
+| H-23 | P1 | **Payload v2:** no `artifact_observed`; benign alert-entities first, ≤1 relation, ≤3×4. Bench on Jev (near-deterministic), then port to mimo. | exp-019 (Jev): **rejected** — platform 9.23 vs 10.45 |
 | H-24 | P2 | **Zero-call fan-out summary:** when an entity has many relations of one type (e.g. connected_to), code summarises distinct destinations, port/fqdn stacking, rare outliers and inter-arrival regularity from pages already fetched — general beaconing/stack-counting logic, no extra tool calls. | MODIFY of the advisor's coverage gate |
 | H-25 | P2 | **Verdict self-consistency:** sample the final verdict 2–3× on the same dossier (LLM calls only); on disagreement spend 2–4 calls on the disputed evidence. | targets verdict flips (main variance + loss) |
 | H-26 | P2 | **Scope completeness (RESPOND tier):** the review lists every host/user with the relation linking it to the chain; ask for host_to_isolate / identity_to_rotate or an explicit exclusion. | KEEP, low priority |
