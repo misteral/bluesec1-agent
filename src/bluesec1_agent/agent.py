@@ -7,7 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
 from bluesec1_agent.llm import StructuredStepClient, render_json
 from bluesec1_agent.models import FinishInvestigationRequest, NextStep
-from bluesec1_agent.review import EntityBook, gate_issues, review_message, sanitize_submission
+from bluesec1_agent.review import (
+    EntityBook,
+    apply_payload_policy,
+    gate_issues,
+    review_message,
+    sanitize_submission,
+)
 from bluesec1_agent.tracking import RunRecorder, scenario_fingerprint
 from bluesec1_client import (
     RemoteBenchmarkClient,
@@ -185,6 +191,7 @@ class SimpleSGRAgent:
         review_llm: StructuredStepClient | None = None,
         review_budget_usd: float = 0.0,
         run_budget_usd: float | None = None,
+        payload_policy: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -198,6 +205,7 @@ class SimpleSGRAgent:
             review_llm: Optional stronger model for the review turn (H-08).
             review_budget_usd: Spend cap for `review_llm` across the run.
             run_budget_usd: Stop leasing new tasks once total LLM spend reaches this (USD).
+            payload_policy: Shape the final payload with the contract tiers and benign cap.
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -214,6 +222,7 @@ class SimpleSGRAgent:
         self.review_spent_usd = 0.0
         self.run_budget_usd = run_budget_usd
         self.run_spent_usd = 0.0
+        self.payload_policy = payload_policy
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -429,6 +438,10 @@ class SimpleSGRAgent:
                     )
                     continue
                 arguments["submission"] = sanitize_submission(submission, book, seen_ids)
+            if tool_name == "finish_investigation" and self.payload_policy:
+                arguments["submission"] = apply_payload_policy(
+                    arguments.get("submission", {}), book
+                )
             redirected_from = None
             redirect = guard.redirect(tool_name, arguments, expand_enabled=self.expand_entity)
             if redirect is not None and redirect[0] in available_tools:

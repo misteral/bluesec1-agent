@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     jev_benign_max_entities: int = Field(
         default=4, validation_alias="JEV_BENIGN_MAX_ENTITIES", ge=1, le=20
     )
+    # Contract tiers + benign cap on the final payload of the LLM agent (from exp-014).
+    agent_payload_policy: bool = Field(default=False, validation_alias="AGENT_PAYLOAD_POLICY")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

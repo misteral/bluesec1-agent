@@ -268,3 +268,40 @@ def sanitize_submission(
         if evidence_list:
             cleaned["legitimacy_evidence"] = evidence_list
     return cleaned
+
+
+def apply_payload_policy(
+    submission: dict[str, Any], book: EntityBook, *, benign_max_entities: int = 3
+) -> dict[str, Any]:
+    """Contract-derived payload shaping (exp-014 showed +0.06 quality in both verdict groups).
+
+    Malicious: every reported entity also gets its missing RESPOND/FORENSIC tier rows.
+    Benign: at most `benign_max_entities` entity citations with at most 4 fields each, because
+    extra citations lowered quality.
+    """
+    shaped = dict(submission)
+    if submission.get("verdict") == "malicious":
+        rows = list(submission.get("ir_artifacts") or [])
+        present = {(r.get("entity_id"), r.get("kind")) for r in rows}
+        reported = [r.get("entity_id") for r in rows if r.get("entity_id") in book.entities]
+        for row in dual_tier_artifacts(list(dict.fromkeys(reported)), book):
+            if (
+                row["kind"] != "artifact_observed"
+                and (row["entity_id"], row["kind"]) not in present
+            ):
+                rows.append(row)
+                present.add((row["entity_id"], row["kind"]))
+        shaped["ir_artifacts"] = rows
+    else:
+        evidence = []
+        entities = 0
+        for item in submission.get("legitimacy_evidence") or []:
+            if item.get("anchor") == "entity":
+                if entities >= benign_max_entities:
+                    continue
+                entities += 1
+                item = {**item, "property_fields": list(item.get("property_fields") or [])[:4]}
+            evidence.append(item)
+        if evidence:
+            shaped["legitimacy_evidence"] = evidence
+    return shaped

@@ -11,6 +11,6 @@ if [[ -z "$token" || -z "$llm_key" ]]; then
 fi
 mkdir -p runs
 env "$@" SCENARIO_RUNTIME_TOKEN="$token" LLM_API_KEY="$llm_key" \
-  nohup uv run --env-file .env bluesec1-agent --experiment "$experiment" \
+  nohup caffeinate -i uv run --env-file .env bluesec1-agent --experiment "$experiment" \
   > "runs/$experiment-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 echo "launched $experiment pid $! log runs/$experiment-*.log"

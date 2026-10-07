@@ -91,3 +91,32 @@ def test_dual_tier_gives_respond_and_forensic_rows_per_type() -> None:
         ("proc-1", "process_observed"),
         ("host-1", "host_to_isolate"),
     }
+
+
+def test_payload_policy_adds_missing_tiers_and_caps_benign() -> None:
+    """LLM payloads get missing tier rows; benign citations are capped."""
+    from bluesec1_agent.review import apply_payload_policy
+
+    book = make_book()
+    book.learn({"id": "f1", "type": "windows_file", "properties": {"path": "x"}})
+    malicious = {
+        "verdict": "malicious",
+        "ir_artifacts": [{"entity_id": "f1", "kind": "file_to_delete"}],
+        "reasoning": "r",
+    }
+    shaped = apply_payload_policy(malicious, book)
+    assert {(r["entity_id"], r["kind"]) for r in shaped["ir_artifacts"]} == {
+        ("f1", "file_to_delete"),
+        ("f1", "file_observed"),
+    }
+
+    benign = {
+        "verdict": "benign",
+        "legitimacy_evidence": [
+            {"anchor": "entity", "entity_id": f"e{i}", "property_fields": list("abcdef")}
+            for i in range(5)
+        ],
+    }
+    capped = apply_payload_policy(benign, book)["legitimacy_evidence"]
+    assert len(capped) == 3
+    assert all(len(item["property_fields"]) == 4 for item in capped)
