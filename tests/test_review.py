@@ -167,3 +167,26 @@ def test_endpoint_entities_are_valid_artifacts() -> None:
     assert gate_issues(submission, book, {"rel-1"}, endpoints) == []
     kept = sanitize_submission(submission, book, {"rel-1"}, endpoints)["ir_artifacts"]
     assert {a["entity_id"] for a in kept} == {"proc-1", "written-file"}
+
+
+def test_drop_telemetry_removes_cmdlet_and_connection_rows() -> None:
+    """H-37: telemetry records are not IR artifacts."""
+    from bluesec1_agent.review import drop_telemetry
+
+    book = make_book()
+    book.learn(
+        [
+            {
+                "id": "c1",
+                "type": "powershell_cmdlet_invocation",
+                "properties": {"command_name": "x"},
+            },
+            {"id": "n1", "type": "network_connection", "properties": {"dest_ip": "1.2.3.4"}},
+        ]
+    )
+    rows = [
+        {"entity_id": "proc-1", "kind": "process_observed"},
+        {"entity_id": "c1", "kind": "artifact_observed"},
+        {"entity_id": "n1", "kind": "network_block"},
+    ]
+    assert [r["entity_id"] for r in drop_telemetry(rows, book)] == ["proc-1"]

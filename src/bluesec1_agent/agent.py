@@ -208,6 +208,7 @@ class SimpleSGRAgent:
         payload_tiers: bool = True,
         verdict_samples: int = 1,
         jev_benign: JevClient | None = None,
+        no_telemetry: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -250,6 +251,7 @@ class SimpleSGRAgent:
         self.payload_tiers = payload_tiers
         self.verdict_samples = verdict_samples
         self.jev_benign = jev_benign
+        self.no_telemetry = no_telemetry
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -499,6 +501,7 @@ class SimpleSGRAgent:
                     book,
                     tiers=self.payload_tiers,
                     v2=self.payload_v2,
+                    no_telemetry=self.no_telemetry,
                     alert_ids=[
                         e["id"]
                         for e in (

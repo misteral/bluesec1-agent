@@ -139,6 +139,7 @@ async def run(args: argparse.Namespace) -> None:
                 "payload_tiers": settings.agent_payload_tiers,
                 "verdict_samples": settings.agent_verdict_samples,
                 "jev_benign_evidence": settings.agent_jev_benign_evidence,
+                "payload_no_telemetry": settings.payload_no_telemetry,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -199,6 +200,7 @@ async def run(args: argparse.Namespace) -> None:
                 payload_tiers=settings.agent_payload_tiers,
                 verdict_samples=settings.agent_verdict_samples,
                 jev_benign=jev,
+                no_telemetry=settings.payload_no_telemetry,
             )
         else:
             jev = JevClient(
@@ -215,6 +217,7 @@ async def run(args: argparse.Namespace) -> None:
                 benign_max_entities=settings.jev_benign_max_entities,
                 payload_v2=settings.payload_v2,
                 benign_empty=settings.jev_benign_empty,
+                no_telemetry=settings.payload_no_telemetry,
                 recorder=recorder,
                 run_budget_usd=settings.llm_run_budget_usd,
             )

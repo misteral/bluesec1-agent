@@ -20,6 +20,7 @@ from bluesec1_agent.llm import StructuredStepClient, render_json
 from bluesec1_agent.models import FinishInvestigationRequest
 from bluesec1_agent.review import (
     KINDS_BY_ENTITY_TYPE,
+    TELEMETRY_TYPES,
     EntityBook,
     dual_tier_artifacts,
     gate_issues,
@@ -100,6 +101,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         benign_max_entities: int = 4,
         payload_v2: bool = False,
         benign_empty: bool = False,
+        no_telemetry: bool = False,
         recorder: RunRecorder | None = None,
         run_budget_usd: float | None = None,
     ) -> None:
@@ -141,6 +143,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         self.benign_max_entities = benign_max_entities
         self.payload_v2 = payload_v2
         self.benign_empty = benign_empty
+        self.no_telemetry = no_telemetry
 
     # ------------------------------------------------------------------ task loop
 
@@ -296,6 +299,10 @@ class JevNavigatorAgent(SimpleSGRAgent):
             for i, entity_id in enumerate(ranked)
             if roles.get(f"r{i:02d}", {}).get("choice") == "attacker"
         ]
+        if self.no_telemetry:
+            attacker = [
+                e for e in attacker if state.book.entities[e]["type"] not in TELEMETRY_TYPES
+            ]
         if p_attack >= self.attack_threshold:
             return {
                 "verdict": "malicious",

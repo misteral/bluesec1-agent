@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     agent_jev_benign_evidence: bool = Field(
         default=False, validation_alias="AGENT_JEV_BENIGN_EVIDENCE"
     )
+    # H-37: drop telemetry records (cmdlet invocations, connections) from malicious artifacts.
+    payload_no_telemetry: bool = Field(default=False, validation_alias="PAYLOAD_NO_TELEMETRY")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

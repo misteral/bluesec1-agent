@@ -79,6 +79,21 @@ FORENSIC_KIND_BY_TYPE: dict[str, str] = {
 }
 
 
+# H-37: telemetry records are not IR artifacts (contract: connection telemetry lives on relations;
+# soc-expert: cmdlet rows r −0.53, connection rows r −0.35 with Q within template, 5 families).
+TELEMETRY_TYPES = {"powershell_cmdlet_invocation", "network_connection"}
+
+
+def drop_telemetry(rows: list[dict[str, str]], book: "EntityBook") -> list[dict[str, str]]:
+    """Remove artifact rows whose entity is a telemetry record; never empties the list."""
+    kept = [
+        r
+        for r in rows
+        if (book.entities.get(r.get("entity_id", "")) or {}).get("type") not in TELEMETRY_TYPES
+    ]
+    return kept or rows
+
+
 def dual_tier_artifacts(
     entity_ids: list[str], book: "EntityBook", *, allow_fallback: bool = True
 ) -> list[dict[str, str]]:
@@ -298,6 +313,7 @@ def apply_payload_policy(
     benign_max_entities: int = 3,
     tiers: bool = True,
     v2: bool = False,
+    no_telemetry: bool = False,
     alert_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Contract-derived payload shaping (exp-014 showed +0.06 quality in both verdict groups).
@@ -311,6 +327,12 @@ def apply_payload_policy(
     anchors lowered quality within both agent families; a case may still rest on one link).
     """
     shaped = dict(submission)
+    if no_telemetry and submission.get("verdict") == "malicious":
+        submission = {
+            **submission,
+            "ir_artifacts": drop_telemetry(list(submission.get("ir_artifacts") or []), book),
+        }
+        shaped = dict(submission)
     if v2 and submission.get("verdict") == "malicious":
         kept = [
             r for r in submission.get("ir_artifacts") or [] if r.get("kind") != "artifact_observed"
