@@ -76,6 +76,20 @@ Platform limits (organisers' announcement, received 2026-10-06; overrides README
   The user delegated experiment decisions (2026-10-06): launch without asking, prefer free models.
 - The LLM must support tool calling / structured output.
 
+## Dev vs prod — no overfitting
+Current runs are the **dev** stage (practice queue of 30 tasks). A **prod** stage follows with
+unseen, mutated scenarios; the agent must work there, not just score on dev.
+- Every change must be justified by general SOC reasoning or a platform contract
+  (tool schemas, artifact kinds), never by "this fixes dev task N".
+- No scenario-specific values in code or prompts: hostnames, accounts, IPs, hashes, ids,
+  non-system file names, alert texts. `uv run python scripts/overfit_check.py` scans recorded
+  runs and fails if any such value appears in `src/` — run it before every commit.
+- Prompt examples use generic, well-known techniques (LOLBins, persistence types), not wording
+  copied from dev alerts.
+- Prefer changes that reduce error modes (guards, gates, budgets) over changes that encode
+  verdict rules; verdict heuristics must be stated as general detection logic.
+- Do not tune thresholds to dev scores alone; check the per-task breakdown for *why*.
+
 ## Experiments
 Every change to the agent is an experiment, tracked in `EXPERIMENTS.md` (protocol, metrics, log).
 Ideas waiting to be tested live in `HYPOTHESES.md` (backlog H-NN with priority and sources);

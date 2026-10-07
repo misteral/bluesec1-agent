@@ -28,7 +28,8 @@ Raw artifacts live in `runs/` (gitignored, contains platform data); this file is
 6. **Free-tier budget.** OpenRouter free models allow 20 req/min and 1000 req/day per key (resets 00:00 UTC); a 30-task run needs ~450–600 requests → about two free runs per day.
 7. **Noise floor.** The LLM is stochastic and the queue is small. A delta smaller than the
    spread between two runs of the same config (see `Baselines`) is not an improvement.
-8. **Generalise.** The final round uses unseen, mutated scenarios. A change that only helps a
+8. **Dev, not prod.** Dev scores guide the work but are not the goal; see AGENTS.md «Dev vs prod». `scripts/overfit_check.py` must pass.
+9. **Generalise.** The final round uses unseen, mutated scenarios. A change that only helps a
    specific practice scenario (hard-coded ids, names, hashes) is rejected even if it scores.
 
 ## Metrics
