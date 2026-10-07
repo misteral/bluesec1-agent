@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     agent_verdict_samples: int = Field(
         default=1, validation_alias="AGENT_VERDICT_SAMPLES", ge=1, le=7
     )
+    # Control experiment only: submit benign verdicts without legitimacy evidence (Jev agent).
+    jev_benign_empty: bool = Field(default=False, validation_alias="JEV_BENIGN_EMPTY")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

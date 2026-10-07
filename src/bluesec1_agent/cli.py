@@ -120,6 +120,7 @@ async def run(args: argparse.Namespace) -> None:
                 ),
                 "jev_stop_threshold": settings.jev_stop_threshold,
                 "jev_artifact_policy": settings.jev_artifact_policy,
+                "jev_benign_empty": settings.jev_benign_empty,
                 "jev_benign_max_entities": settings.jev_benign_max_entities,
                 "run_label": run_label,
                 "descriptive_label": descriptive_label,
@@ -207,6 +208,7 @@ async def run(args: argparse.Namespace) -> None:
                 artifact_policy=settings.jev_artifact_policy,
                 benign_max_entities=settings.jev_benign_max_entities,
                 payload_v2=settings.payload_v2,
+                benign_empty=settings.jev_benign_empty,
                 recorder=recorder,
                 run_budget_usd=settings.llm_run_budget_usd,
             )

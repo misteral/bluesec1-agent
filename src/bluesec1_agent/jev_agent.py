@@ -99,6 +99,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         artifact_policy: Literal["jev", "dual_tier"] = "jev",
         benign_max_entities: int = 4,
         payload_v2: bool = False,
+        benign_empty: bool = False,
         recorder: RunRecorder | None = None,
         run_budget_usd: float | None = None,
     ) -> None:
@@ -139,6 +140,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         self.artifact_policy = artifact_policy
         self.benign_max_entities = benign_max_entities
         self.payload_v2 = payload_v2
+        self.benign_empty = benign_empty
 
     # ------------------------------------------------------------------ task loop
 
@@ -319,6 +321,10 @@ class JevNavigatorAgent(SimpleSGRAgent):
                 evidence.append(
                     {"anchor": "entity", "entity_id": entity_id, "property_fields": chosen}
                 )
+        if self.benign_empty:
+            # Control for the soc-expert P1 hypothesis (exp-018 task scored Q 0.54 with an empty
+            # list): measures whether citations are mostly penalised. Not a production setting.
+            evidence = []
         return {
             "verdict": "benign",
             "legitimacy_evidence": evidence,
