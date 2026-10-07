@@ -130,6 +130,7 @@ async def run(args: argparse.Namespace) -> None:
                 "expand_entity": settings.agent_expand_entity,
                 "finish_review": settings.agent_finish_review,
                 "payload_policy": settings.agent_payload_policy,
+                "payload_v2": settings.payload_v2,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -182,6 +183,7 @@ async def run(args: argparse.Namespace) -> None:
                 review_budget_usd=settings.llm_review_budget_usd,
                 run_budget_usd=settings.llm_run_budget_usd,
                 payload_policy=settings.agent_payload_policy,
+                payload_v2=settings.payload_v2,
             )
         else:
             jev = JevClient(
@@ -196,6 +198,7 @@ async def run(args: argparse.Namespace) -> None:
                 stop_threshold=settings.jev_stop_threshold,
                 artifact_policy=settings.jev_artifact_policy,
                 benign_max_entities=settings.jev_benign_max_entities,
+                payload_v2=settings.payload_v2,
                 recorder=recorder,
                 run_budget_usd=settings.llm_run_budget_usd,
             )

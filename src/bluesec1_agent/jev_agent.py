@@ -98,6 +98,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         min_calls: int = 3,
         artifact_policy: Literal["jev", "dual_tier"] = "jev",
         benign_max_entities: int = 4,
+        payload_v2: bool = False,
         recorder: RunRecorder | None = None,
         run_budget_usd: float | None = None,
     ) -> None:
@@ -137,6 +138,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         self.min_calls = min_calls
         self.artifact_policy = artifact_policy
         self.benign_max_entities = benign_max_entities
+        self.payload_v2 = payload_v2
 
     # ------------------------------------------------------------------ task loop
 
@@ -296,7 +298,10 @@ class JevNavigatorAgent(SimpleSGRAgent):
             return {
                 "verdict": "malicious",
                 "ir_artifacts": (
-                    dual_tier_artifacts(attacker or ranked[:1], state.book)
+                    dual_tier_artifacts(
+                        attacker or ranked[:1], state.book, allow_fallback=not self.payload_v2
+                    )
+                    or dual_tier_artifacts(ranked[:1], state.book)
                     if self.artifact_policy == "dual_tier"
                     else await self._artifact_kinds(state, attacker or ranked[:1])
                 ),

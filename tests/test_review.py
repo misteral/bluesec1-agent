@@ -120,3 +120,33 @@ def test_payload_policy_adds_missing_tiers_and_caps_benign() -> None:
     capped = apply_payload_policy(benign, book)["legitimacy_evidence"]
     assert len(capped) == 3
     assert all(len(item["property_fields"]) == 4 for item in capped)
+
+
+def test_payload_v2_drops_artifact_observed_and_orders_benign() -> None:
+    """v2: no escape-hatch kind; alert entities first; at most one relation anchor."""
+    from bluesec1_agent.review import apply_payload_policy
+
+    book = make_book()
+    malicious = {
+        "verdict": "malicious",
+        "ir_artifacts": [
+            {"entity_id": "proc-1", "kind": "process_observed"},
+            {"entity_id": "host-1", "kind": "artifact_observed"},
+        ],
+    }
+    kinds = {r["kind"] for r in apply_payload_policy(malicious, book, v2=True)["ir_artifacts"]}
+    assert "artifact_observed" not in kinds
+
+    benign = {
+        "verdict": "benign",
+        "legitimacy_evidence": [
+            {"anchor": "relation", "relation_id": "r1", "property_fields": []},
+            {"anchor": "relation", "relation_id": "r2", "property_fields": []},
+            {"anchor": "entity", "entity_id": "x1", "property_fields": ["a"]},
+            {"anchor": "entity", "entity_id": "proc-1", "property_fields": ["cmdline"]},
+        ],
+    }
+    shaped = apply_payload_policy(benign, book, v2=True, alert_ids=["proc-1"])
+    items = shaped["legitimacy_evidence"]
+    assert items[0]["entity_id"] == "proc-1"
+    assert sum(i["anchor"] == "relation" for i in items) == 1

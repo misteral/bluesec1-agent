@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     )
     # Contract tiers + benign cap on the final payload of the LLM agent (from exp-014).
     agent_payload_policy: bool = Field(default=False, validation_alias="AGENT_PAYLOAD_POLICY")
+    # Stricter payload shaping from the 2026-10-07 brainstorm (see EXPERIMENTS exp-019).
+    payload_v2: bool = Field(default=False, validation_alias="PAYLOAD_V2")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

@@ -192,6 +192,7 @@ class SimpleSGRAgent:
         review_budget_usd: float = 0.0,
         run_budget_usd: float | None = None,
         payload_policy: bool = False,
+        payload_v2: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -206,6 +207,7 @@ class SimpleSGRAgent:
             review_budget_usd: Spend cap for `review_llm` across the run.
             run_budget_usd: Stop leasing new tasks once total LLM spend reaches this (USD).
             payload_policy: Shape the final payload with the contract tiers and benign cap.
+            payload_v2: Stricter shaping (no artifact_observed; alert-first, ≤1 relation).
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -223,6 +225,7 @@ class SimpleSGRAgent:
         self.run_budget_usd = run_budget_usd
         self.run_spent_usd = 0.0
         self.payload_policy = payload_policy
+        self.payload_v2 = payload_v2
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -440,7 +443,16 @@ class SimpleSGRAgent:
                 arguments["submission"] = sanitize_submission(submission, book, seen_ids)
             if tool_name == "finish_investigation" and self.payload_policy:
                 arguments["submission"] = apply_payload_policy(
-                    arguments.get("submission", {}), book
+                    arguments.get("submission", {}),
+                    book,
+                    v2=self.payload_v2,
+                    alert_ids=[
+                        e["id"]
+                        for e in (
+                            alert.get("trigger_entities") or [] if isinstance(alert, dict) else []
+                        )
+                        if isinstance(e, dict) and "id" in e
+                    ],
                 )
             redirected_from = None
             redirect = guard.redirect(tool_name, arguments, expand_enabled=self.expand_entity)

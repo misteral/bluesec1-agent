@@ -79,8 +79,15 @@ FORENSIC_KIND_BY_TYPE: dict[str, str] = {
 }
 
 
-def dual_tier_artifacts(entity_ids: list[str], book: "EntityBook") -> list[dict[str, str]]:
-    """One RESPOND and one FORENSIC row per attacker entity, where the type has each tier."""
+def dual_tier_artifacts(
+    entity_ids: list[str], book: "EntityBook", *, allow_fallback: bool = True
+) -> list[dict[str, str]]:
+    """One RESPOND and one FORENSIC row per attacker entity, where the type has each tier.
+
+    With `allow_fallback=False`, entities whose type has no tier row are skipped instead of
+    being reported as `artifact_observed` (that escape-hatch kind lowered quality in both agent
+    families across exp-008…015 — likely a marker of reporting a non-attacker entity).
+    """
     artifacts: list[dict[str, str]] = []
     for entity_id in entity_ids:
         entity_type = book.entities[entity_id]["type"]
@@ -91,7 +98,7 @@ def dual_tier_artifacts(entity_ids: list[str], book: "EntityBook") -> list[dict[
                 FORENSIC_KIND_BY_TYPE.get(entity_type),
             )
             if kind
-        ] or ["artifact_observed"]
+        ] or (["artifact_observed"] if allow_fallback else [])
         artifacts.extend({"entity_id": entity_id, "kind": kind} for kind in kinds)
     return artifacts
 
@@ -271,15 +278,30 @@ def sanitize_submission(
 
 
 def apply_payload_policy(
-    submission: dict[str, Any], book: EntityBook, *, benign_max_entities: int = 3
+    submission: dict[str, Any],
+    book: EntityBook,
+    *,
+    benign_max_entities: int = 3,
+    v2: bool = False,
+    alert_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Contract-derived payload shaping (exp-014 showed +0.06 quality in both verdict groups).
 
     Malicious: every reported entity also gets its missing RESPOND/FORENSIC tier rows.
     Benign: at most `benign_max_entities` entity citations with at most 4 fields each, because
     extra citations lowered quality.
+
+    v2 (brainstorm 2026-10-07, devil's-advocate-checked): malicious drops `artifact_observed`
+    rows; benign cites alert entities first and keeps at most one relation anchor (relation
+    anchors lowered quality within both agent families; a case may still rest on one link).
     """
     shaped = dict(submission)
+    if v2 and submission.get("verdict") == "malicious":
+        kept = [
+            r for r in submission.get("ir_artifacts") or [] if r.get("kind") != "artifact_observed"
+        ]
+        if kept:
+            submission = {**submission, "ir_artifacts": kept}
     if submission.get("verdict") == "malicious":
         rows = list(submission.get("ir_artifacts") or [])
         present = {(r.get("entity_id"), r.get("kind")) for r in rows}
@@ -295,7 +317,13 @@ def apply_payload_policy(
     else:
         evidence = []
         entities = 0
-        for item in submission.get("legitimacy_evidence") or []:
+        items = list(submission.get("legitimacy_evidence") or [])
+        if v2:
+            alert = set(alert_ids or [])
+            items.sort(key=lambda i: 0 if i.get("entity_id") in alert else 1)
+            relations = [i for i in items if i.get("anchor") == "relation"][:1]
+            items = [i for i in items if i.get("anchor") != "relation"] + relations
+        for item in items:
             if item.get("anchor") == "entity":
                 if entities >= benign_max_entities:
                     continue

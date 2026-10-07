@@ -62,6 +62,27 @@ Priority: P1 = do next, P2 = after P1 results, P3 = explore later.
 | H-17 | P3 | **Jev Router for the main loop.** `typesafe/jev-router` picks model and reasoning effort per turn, cache-aware. | OpenRouter Jev Router announcement | maybe better quality/latency per $ | unpredictable model and cost per turn (confounds experiments); Jev failures fail the request (no fallback) — only after the harness is final |
 | H-12 | P3 | **Model choice under the same harness.** mimo-v2.6-flash (target; a mimo model powered Cited Sandbox) vs dots free vs deepseek-v4-pro, only after H-01…H-04 stabilise the harness. | Cited Sandbox model choice | pick the best quality per $ | needs noise floor first |
 
+
+## Brainstorm 2026-10-07 — senior security advisor × devil's advocate
+
+Two read-only subagents analysed runs exp-002…exp-017. Advisor proposals were checked by the devil's advocate against agent-family confounders, multiple comparisons and overfitting. Outcome:
+
+- **Robust:** precision of benign evidence (fewer entities/fields/relations → higher Q, both agent families; exp-014 replicated it); `artifact_observed` rows hurt (both families); efficiency ≈ min(1, B/calls) with a per-scenario budget B — most of our benign tasks already sit at E=1.
+- **Rejected as overfitting / contradicted:** entity-type ordering for citations (does not replicate across families); dropping `network_block` on `network_connection` (Jev data says it helps); a coverage gate built from one browser-beaconing scenario (Jev read ~180/180 connections there and still said benign); a "benign = 6–9 calls" prompt (fitted to two scenarios; pushes premature benign).
+- **Correction:** the score has no `total_reward`; a false positive costs ≈0.7× a missed attack (both lose the task's Q), not "far less".
+- **Realistic upside of payload shaping:** +1…2 points, not +6 — it cannot close the gap to the leaders (23.6).
+
+| ID | P | Hypothesis | Verdict / plan |
+|---|---|---|---|
+| H-21 | P1 | **Credit-day best-of-N:** run the frozen best config several times in parallel on the credit arena and keep the best run (leaderboard ranks the best run; ≤10 parallel runs). Free variance, zero overfitting. | ADD, top priority — confirm the credit-arena run rules with the organisers |
+| H-22 | P1 | **Noise floor for the mimo agent:** replicate exp-013 unchanged (verdicts flip across runs in some scenarios). | exp-018 |
+| H-23 | P1 | **Payload v2:** no `artifact_observed`; benign alert-entities first, ≤1 relation, ≤3×4. Bench on Jev (near-deterministic), then port to mimo. | exp-019 (Jev) |
+| H-24 | P2 | **Zero-call fan-out summary:** when an entity has many relations of one type (e.g. connected_to), code summarises distinct destinations, port/fqdn stacking, rare outliers and inter-arrival regularity from pages already fetched — general beaconing/stack-counting logic, no extra tool calls. | MODIFY of the advisor's coverage gate |
+| H-25 | P2 | **Verdict self-consistency:** sample the final verdict 2–3× on the same dossier (LLM calls only); on disagreement spend 2–4 calls on the disputed evidence. | targets verdict flips (main variance + loss) |
+| H-26 | P2 | **Scope completeness (RESPOND tier):** the review lists every host/user with the relation linking it to the chain; ask for host_to_isolate / identity_to_rotate or an explicit exclusion. | KEEP, low priority |
+| H-27 | P2 | **`network_block` on attacker-infrastructure host entities** (our gate rejected it 4× in exp-013; contract-plausible, untested). | separate test |
+| H-28 | P1 | **Reliability for the credit run:** LLM timeout ≪ 15 min, fallback model on provider failure, stable network. | KEEP (insurance) |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every
