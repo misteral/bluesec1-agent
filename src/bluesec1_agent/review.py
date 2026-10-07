@@ -169,13 +169,21 @@ class EntityBook:
         ]
 
 
-def gate_issues(submission: dict[str, Any], book: EntityBook, seen_ids: set[str]) -> list[str]:
+def gate_issues(
+    submission: dict[str, Any],
+    book: EntityBook,
+    seen_ids: set[str],
+    endpoint_entities: set[str] | None = None,
+) -> list[str]:
     """Return deterministic problems with a finish payload; empty when it passes.
 
     Args:
         submission: The `submission` object of a finish_investigation call.
         book: Entities observed in the task.
         seen_ids: Every id seen in the alert or tool results (entities and relations).
+        endpoint_entities: Entity ids known only as relation endpoints (never read). They are
+            valid artifacts; their type is unknown, so the kind is not checked. Before this,
+            12–17 real artifacts per mimo run were rejected as "relation ids" (exp-013/018/020).
 
     Returns:
         Human-readable issues the model must fix before submitting.
@@ -191,6 +199,8 @@ def gate_issues(submission: dict[str, Any], book: EntityBook, seen_ids: set[str]
             if (entity_id, kind) in pairs:
                 issues.append(f"Duplicate artifact {entity_id} / {kind}.")
             pairs.add((entity_id, kind))
+            if entity_id in (endpoint_entities or set()) and entity_id not in book.entities:
+                continue
             if entity_id not in book.entities:
                 where = "a relation id" if entity_id in seen_ids else "never observed"
                 issues.append(f"Artifact {entity_id!r} is {where}; artifacts must be entity ids.")
@@ -242,7 +252,10 @@ def review_message(submission: dict[str, Any], book: EntityBook, issues: list[st
 
 
 def sanitize_submission(
-    submission: dict[str, Any], book: EntityBook, seen_ids: set[str]
+    submission: dict[str, Any],
+    book: EntityBook,
+    seen_ids: set[str],
+    endpoint_entities: set[str] | None = None,
 ) -> dict[str, Any]:
     """Drop parts of a final payload that cannot be right, keeping the rest.
 
@@ -255,7 +268,8 @@ def sanitize_submission(
         artifacts, pairs = [], set()
         for artifact in submission.get("ir_artifacts") or []:
             pair = (artifact.get("entity_id"), artifact.get("kind"))
-            if pair[0] in book.entities and pair not in pairs:
+            known = pair[0] in book.entities or pair[0] in (endpoint_entities or set())
+            if known and pair not in pairs:
                 artifacts.append(artifact)
                 pairs.add(pair)
         if artifacts:

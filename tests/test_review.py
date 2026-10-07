@@ -150,3 +150,20 @@ def test_payload_v2_drops_artifact_observed_and_orders_benign() -> None:
     items = shaped["legitimacy_evidence"]
     assert items[0]["entity_id"] == "proc-1"
     assert sum(i["anchor"] == "relation" for i in items) == 1
+
+
+def test_endpoint_entities_are_valid_artifacts() -> None:
+    """Files seen only as relation endpoints (never read) must not be rejected or dropped."""
+    book = make_book()
+    submission = {
+        "verdict": "malicious",
+        "ir_artifacts": [
+            {"entity_id": "proc-1", "kind": "process_observed"},
+            {"entity_id": "written-file", "kind": "file_observed"},
+        ],
+    }
+    endpoints = {"written-file", "proc-1"}
+
+    assert gate_issues(submission, book, {"rel-1"}, endpoints) == []
+    kept = sanitize_submission(submission, book, {"rel-1"}, endpoints)["ir_artifacts"]
+    assert {a["entity_id"] for a in kept} == {"proc-1", "written-file"}

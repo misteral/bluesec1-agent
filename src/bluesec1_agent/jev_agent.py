@@ -211,7 +211,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
         else:
             submission = await self._final_by_jev(state)
         seen_ids = set(state.book.entities) | set(state.relations)
-        submission = sanitize_submission(submission, state.book, seen_ids)
+        submission = sanitize_submission(submission, state.book, seen_ids, state.endpoints())
         self._task_stats["cost_usd"] += self.jev.cost_usd - jev_cost_start
         self._task_stats["verdict"] = submission.get("verdict")
         self._task_stats["ir_artifacts"] = submission.get("ir_artifacts")
@@ -251,7 +251,7 @@ class JevNavigatorAgent(SimpleSGRAgent):
             self._task_stats["cost_usd"] += stats.get("cost_usd", 0.0)
             assert isinstance(step.function, FinishInvestigationRequest)
             submission = step.function.model_dump(mode="json", exclude_none=True)["submission"]
-            issues = gate_issues(submission, state.book, set(state.relations))
+            issues = gate_issues(submission, state.book, set(state.relations), state.endpoints())
             self._task_stats["review_issues"] = issues
             if not issues:
                 break
@@ -535,6 +535,10 @@ class _Evidence:
             )
         actions.sort(key=lambda item: item[0])
         return [(action, label) for _, action, label in actions[:MAX_CANDIDATES]]
+
+    def endpoints(self) -> set[str]:
+        """Entity ids known as relation endpoints (read or not)."""
+        return {end for r in self.relations.values() for end in (r["source"], r["target"]) if end}
 
     def ranked_entities(self) -> list[str]:
         dist = self.distances()

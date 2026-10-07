@@ -459,10 +459,11 @@ class SimpleSGRAgent:
             if tool_name == "finish_investigation" and self.finish_review:
                 submission = arguments.get("submission", {})
                 seen_ids = set(registry.kinds) | set(book.entities)
+                endpoint_entities = {i for i, kind in registry.kinds.items() if kind == "entity"}
                 if not reviewed:
                     reviewed = True
                     review_pending = True
-                    issues = gate_issues(submission, book, seen_ids)
+                    issues = gate_issues(submission, book, seen_ids, endpoint_entities)
                     self._task_stats["review_issues"] = issues
                     self._task_stats["draft_verdict"] = submission.get("verdict")
                     draft_step = step
@@ -483,7 +484,9 @@ class SimpleSGRAgent:
                         }
                     )
                     continue
-                arguments["submission"] = sanitize_submission(submission, book, seen_ids)
+                arguments["submission"] = sanitize_submission(
+                    submission, book, seen_ids, endpoint_entities
+                )
             if tool_name == "finish_investigation" and self.payload_policy:
                 arguments["submission"] = apply_payload_policy(
                     arguments.get("submission", {}),
