@@ -21,6 +21,7 @@ from bluesec1_agent.models import FinishInvestigationRequest
 from bluesec1_agent.review import (
     KINDS_BY_ENTITY_TYPE,
     EntityBook,
+    dual_tier_artifacts,
     gate_issues,
     sanitize_submission,
 )
@@ -95,6 +96,8 @@ class JevNavigatorAgent(SimpleSGRAgent):
         attack_threshold: float = 0.35,
         stop_threshold: float | None = None,
         min_calls: int = 3,
+        artifact_policy: Literal["jev", "dual_tier"] = "jev",
+        benign_max_entities: int = 4,
         recorder: RunRecorder | None = None,
         run_budget_usd: float | None = None,
     ) -> None:
@@ -112,6 +115,10 @@ class JevNavigatorAgent(SimpleSGRAgent):
                 sufficient; stop when P(sufficient) reaches this after `min_calls` calls.
                 exp-010 showed Jev almost never picks `finish` and spends the whole budget.
             min_calls: Minimum platform calls before the sufficiency stop may trigger.
+            artifact_policy: `jev` = Jev picks one kind per attacker entity; `dual_tier` = one
+                RESPOND and one FORENSIC row per entity from the contract tables.
+            benign_max_entities: Cap on cited entities for a benign verdict (extra citations
+                lowered quality: 3-5 items Q 0.38 vs 12+ items Q 0.26 across exp-008…012).
             recorder: Optional experiment recorder.
             run_budget_usd: Stop leasing new tasks once total spend reaches this.
         """
@@ -128,6 +135,8 @@ class JevNavigatorAgent(SimpleSGRAgent):
         self.attack_threshold = attack_threshold
         self.stop_threshold = stop_threshold
         self.min_calls = min_calls
+        self.artifact_policy = artifact_policy
+        self.benign_max_entities = benign_max_entities
 
     # ------------------------------------------------------------------ task loop
 
@@ -286,15 +295,21 @@ class JevNavigatorAgent(SimpleSGRAgent):
         if p_attack >= self.attack_threshold:
             return {
                 "verdict": "malicious",
-                "ir_artifacts": await self._artifact_kinds(state, attacker or ranked[:1]),
+                "ir_artifacts": (
+                    dual_tier_artifacts(attacker or ranked[:1], state.book)
+                    if self.artifact_policy == "dual_tier"
+                    else await self._artifact_kinds(state, attacker or ranked[:1])
+                ),
                 "reasoning": f"Jev P(attack)={p_attack:.2f}; attacker-related entities: "
                 + ", ".join(state.book.entities[e]["label"][:60] for e in attacker[:8]),
             }
-        benign_ids = [e for e in ranked if e not in attacker][:4] or ranked[:2]
+        benign_ids = [e for e in ranked if e not in attacker][: self.benign_max_entities] or ranked[
+            :2
+        ]
         evidence = []
         for entity_id in benign_ids:
             fields = state.book.entities[entity_id]["fields"]
-            chosen = [f for f in LEGITIMACY_FIELDS if f in fields] or fields[:3]
+            chosen = ([f for f in LEGITIMACY_FIELDS if f in fields] or fields[:3])[:4]
             if chosen:
                 evidence.append(
                     {"anchor": "entity", "entity_id": entity_id, "property_fields": chosen}

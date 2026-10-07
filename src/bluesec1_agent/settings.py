@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     jev_stop_threshold: float | None = Field(
         default=None, validation_alias="JEV_STOP_THRESHOLD", gt=0, lt=1
     )
+    jev_artifact_policy: Literal["jev", "dual_tier"] = Field(
+        default="jev", validation_alias="JEV_ARTIFACT_POLICY"
+    )
+    jev_benign_max_entities: int = Field(
+        default=4, validation_alias="JEV_BENIGN_MAX_ENTITIES", ge=1, le=20
+    )
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

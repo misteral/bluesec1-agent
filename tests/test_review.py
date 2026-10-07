@@ -74,3 +74,20 @@ def test_sanitize_drops_unobserved_and_unset_fields_but_never_empties() -> None:
         "property_fields"
     ] == ["cmdline"]
     assert sanitize_submission(only_ghost, book, set()) == only_ghost
+
+
+def test_dual_tier_gives_respond_and_forensic_rows_per_type() -> None:
+    """Files get delete + observed; processes only observed; hosts only isolate."""
+    from bluesec1_agent.review import dual_tier_artifacts
+
+    book = make_book()
+    book.learn({"id": "f1", "type": "windows_file", "properties": {"path": "x"}})
+
+    rows = dual_tier_artifacts(["f1", "proc-1", "host-1"], book)
+
+    assert {(r["entity_id"], r["kind"]) for r in rows} == {
+        ("f1", "file_to_delete"),
+        ("f1", "file_observed"),
+        ("proc-1", "process_observed"),
+        ("host-1", "host_to_isolate"),
+    }

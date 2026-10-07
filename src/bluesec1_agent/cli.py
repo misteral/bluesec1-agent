@@ -109,6 +109,8 @@ async def run(args: argparse.Namespace) -> None:
                     settings.jev_attack_threshold if settings.agent_kind == "jev_only" else None
                 ),
                 "jev_stop_threshold": settings.jev_stop_threshold,
+                "jev_artifact_policy": settings.jev_artifact_policy,
+                "jev_benign_max_entities": settings.jev_benign_max_entities,
                 "run_label": run_label,
                 "agent_name": agent_name,
                 "arena": arena,
@@ -177,6 +179,8 @@ async def run(args: argparse.Namespace) -> None:
                 call_budget=settings.jev_call_budget,
                 attack_threshold=settings.jev_attack_threshold,
                 stop_threshold=settings.jev_stop_threshold,
+                artifact_policy=settings.jev_artifact_policy,
+                benign_max_entities=settings.jev_benign_max_entities,
                 recorder=recorder,
                 run_budget_usd=settings.llm_run_budget_usd,
             )

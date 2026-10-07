@@ -37,6 +37,65 @@ KINDS_BY_ENTITY_TYPE: dict[str, set[str]] = {
     "kerberos_ticket": {"ticket_observed", "identity_to_rotate", "other"},
 }
 
+# The artifact contract has two tiers (IRArtifactKind docstring in the tool catalog): RESPOND
+# actions and FORENSIC observed records, with a validator enforcing tier/kind pairing. These
+# tables give one kind per tier for each entity type, from the contract — not from dev tasks.
+RESPOND_KIND_BY_TYPE: dict[str, str] = {
+    "host": "host_to_isolate",
+    "windows_user": "identity_to_rotate",
+    "linux_user": "identity_to_rotate",
+    "ad_object": "identity_to_rotate",
+    "kerberos_ticket": "identity_to_rotate",
+    "windows_file": "file_to_delete",
+    "linux_file": "file_to_delete",
+    "archive_file": "file_to_delete",
+    "powershell_script": "file_to_delete",
+    "email_attachment": "file_to_delete",
+    "windows_service": "persistence_to_remove",
+    "scheduled_task": "persistence_to_remove",
+    "wmi_event_filter": "persistence_to_remove",
+    "wmi_event_consumer": "persistence_to_remove",
+    "wmi_binding": "persistence_to_remove",
+    "systemd_unit": "persistence_to_remove",
+    "registry_key": "persistence_to_remove",
+    "network_connection": "network_block",
+    "email_url": "network_block",
+    "email": "mailbox_action",
+}
+FORENSIC_KIND_BY_TYPE: dict[str, str] = {
+    "windows_process": "process_observed",
+    "linux_process": "process_observed",
+    "windows_file": "file_observed",
+    "linux_file": "file_observed",
+    "archive_file": "file_observed",
+    "email_attachment": "file_observed",
+    "registry_key": "registry_observed",
+    "windows_user": "identity_observed",
+    "linux_user": "identity_observed",
+    "ad_object": "identity_observed",
+    "mounted_volume": "mount_observed",
+    "lnk_shortcut": "lnk_observed",
+    "kerberos_ticket": "ticket_observed",
+}
+
+
+def dual_tier_artifacts(entity_ids: list[str], book: "EntityBook") -> list[dict[str, str]]:
+    """One RESPOND and one FORENSIC row per attacker entity, where the type has each tier."""
+    artifacts: list[dict[str, str]] = []
+    for entity_id in entity_ids:
+        entity_type = book.entities[entity_id]["type"]
+        kinds = [
+            kind
+            for kind in (
+                RESPOND_KIND_BY_TYPE.get(entity_type),
+                FORENSIC_KIND_BY_TYPE.get(entity_type),
+            )
+            if kind
+        ] or ["artifact_observed"]
+        artifacts.extend({"entity_id": entity_id, "kind": kind} for kind in kinds)
+    return artifacts
+
+
 LABEL_KEYS = (
     "hostname",
     "image_path",
