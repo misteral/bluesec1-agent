@@ -91,7 +91,13 @@ async def run(args: argparse.Namespace) -> None:
     arena = args.arena or settings.scenario_runtime_arena
     git = git_state()
     commit = f"{git['commit'] or 'nogit'}{'-dirty' if git['dirty'] else ''}"
-    run_label = args.run_label or settings.remote_run_label or f"{args.experiment}@{commit}"
+    descriptive_label = f"{args.experiment}@{commit}"
+    run_label = args.run_label or settings.remote_run_label or descriptive_label
+    public_model = settings.llm_default_model
+    if settings.public_opaque_labels and not (args.run_label or settings.remote_run_label):
+        run_label = "r" + sha256_text(descriptive_label)[:8]
+    if settings.public_opaque_labels:
+        public_model = "m" + sha256_text(f"{settings.agent_kind}:{settings.llm_default_model}")[:6]
     system_prompt = SYSTEM_PROMPTS[settings.agent_prompt]
     system_prompt_sha = sha256_text(system_prompt)
     recorder = None
@@ -112,6 +118,8 @@ async def run(args: argparse.Namespace) -> None:
                 "jev_artifact_policy": settings.jev_artifact_policy,
                 "jev_benign_max_entities": settings.jev_benign_max_entities,
                 "run_label": run_label,
+                "descriptive_label": descriptive_label,
+                "public_model": public_model,
                 "agent_name": agent_name,
                 "arena": arena,
                 "model": settings.llm_default_model,
@@ -128,6 +136,7 @@ async def run(args: argparse.Namespace) -> None:
             },
         )
         print(f"Recording run artifacts to {recorder.directory}", file=sys.stderr)
+    print(f"Platform run label {run_label} = {descriptive_label}", file=sys.stderr)
     # Fail before CreateRun: a broken provider would otherwise abort every leased task.
     if settings.agent_kind != "jev_only":
         await llm.preflight()
@@ -141,17 +150,21 @@ async def run(args: argparse.Namespace) -> None:
             verify_tls=verify_tls,
             run_label=run_label,
             agent_name=agent_name,
-            model_name=settings.llm_default_model,
+            model_name=public_model,
             arena=arena,
-            metadata={
-                "agent": agent_name,
-                "implementation": "structured-generation-scenario-runtime-grpc",
-                "model": settings.llm_default_model,
-                "experiment": args.experiment,
-                "agent_kind": settings.agent_kind,
-                "commit": commit,
-                "system_prompt_sha": system_prompt_sha,
-            },
+            metadata=(
+                {"agent": agent_name, "run": run_label}
+                if settings.public_opaque_labels
+                else {
+                    "agent": agent_name,
+                    "implementation": "structured-generation-scenario-runtime-grpc",
+                    "model": settings.llm_default_model,
+                    "experiment": args.experiment,
+                    "agent_kind": settings.agent_kind,
+                    "commit": commit,
+                    "system_prompt_sha": system_prompt_sha,
+                }
+            ),
         ) as client,
     ):
         agent: SimpleSGRAgent

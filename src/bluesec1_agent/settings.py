@@ -51,6 +51,10 @@ class Settings(BaseSettings):
         max_length=255,
     )
 
+    # The leaderboard shows run label, agent and model. When true, only opaque codes are sent;
+    # the mapping to experiment/commit/model stays local in runs/<dir>/config.json.
+    public_opaque_labels: bool = Field(default=True, validation_alias="PUBLIC_OPAQUE_LABELS")
+
     llm_base_url: str = Field(validation_alias="LLM_BASE_URL", min_length=1)
     llm_api_key: SecretStr = Field(validation_alias="LLM_API_KEY", min_length=1)
     llm_default_model: str = Field(validation_alias="LLM_DEFAULT_MODEL", min_length=1)

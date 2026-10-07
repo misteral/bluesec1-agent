@@ -16,8 +16,10 @@ Raw artifacts live in `runs/` (gitignored, contains platform data); this file is
    SCENARIO_RUNTIME_TOKEN="$(kc get BLUE_SEC)" LLM_API_KEY="$(kc get OPENROUTER_API_KEY)" \
      uv run --env-file .env bluesec1-agent --experiment exp-NNN-short-name
    ```
-   On the platform the run is labelled `<experiment>@<commit>` (`-dirty` if uncommitted) under
-   the stable `AGENT_NAME`; experiment, commit and prompt hash also go into run metadata.
+   On the platform the run is labelled with an **opaque code** `r<8 hex>` (hash of `<experiment>@<commit>`) and an opaque
+   model code, because the leaderboard is public (`PUBLIC_OPAQUE_LABELS=true`, default since 2026-10-07). The mapping
+   is local: `runs/<dir>/config.json` (`run_label`, `descriptive_label`, `public_model`) and the run log line
+   `Platform run label r… = exp-…@…`. Runs before exp-015 used descriptive labels.
 4. **Record.** `scripts/compare_completed.py exp-A exp-B` compares completed tasks and lists shared scenarios.
     `uv run python scripts/summarize_runs.py` prints the metrics row;
    `--scenarios` compares the same scenarios across runs (keyed by alert fingerprint,
@@ -80,3 +82,4 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 | exp-012 | 2026-10-07 | _see run label_ | typesafe/jev-1.13 only | exp-010 (11 tasks) shows Jev almost never chooses `finish` → every task spends the full 20-call budget (effic. 0.87 vs ≈0.97 elsewhere). Asking Jev P(sufficient) in the same navigation call and stopping at ≥0.7 after ≥3 calls should cut calls/task and raise efficiency at equal quality | `JEV_STOP_THRESHOLD=0.7` on top of exp-010 (0.7 = "probably sufficient", not dev-tuned) | 20.0 | 0.327 | 0.837 | 21.0 | 0.000 | 0.07 | **Complete (30/30).** The sufficiency stop never triggered (0/30), so this is a **replicate of exp-010** → noise floor for full runs: mean reward 23.8 vs 20.0, quality 0.329 vs 0.327. Treat reward deltas < ~4 as noise. |
 | exp-013 | 2026-10-07 | _see run label_ | xiaomi/mimo-v2.6-flash (all turns) | complete 30/30 rerun of the exp-009 config (best efficiency and calls/task so far) with the connection-loss wait and task_completed fix; expect ≈ exp-009 (reward ~35, quality ~0.39) and no lost tasks | exp-009 config on commit baeddd9 | _pending_ | | | | | | |
 | exp-014 | 2026-10-07 | _see run label_ | typesafe/jev-1.13 only | payload policy, read by verdict group vs exp-010/012 (same verdict logic): (a) malicious Q plateaus at 0.55–0.70 regardless of artifact count (6–17) → likely missing tier rows; one RESPOND + one FORENSIC row per attacker entity from the contract tables should raise malicious Q; (b) benign Q falls with more citations (3–5: 0.38, 12+: 0.26) → cap at 3 entities × 4 fields should raise benign Q | `JEV_ARTIFACT_POLICY=dual_tier`, `JEV_BENIGN_MAX_ENTITIES=3` on the exp-010 config | _pending_ | | | | | | |
+| exp-015 | 2026-10-07 | _see run label_ | typesafe/jev-1.13 only | Jev with a larger budget: every Jev task spends its whole 20-call budget (the 20 was my default, not a platform limit — the platform allows 100); more calls may raise artifact completeness (quality) while efficiency depends on relevance, not count. Expect q30 ↑ vs exp-014 if completeness was budget-bound | `JEV_CALL_BUDGET=40` + all Jev improvements (dual-tier, benign cap 3) | _pending_ | | | | | | |
