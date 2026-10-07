@@ -107,6 +107,12 @@ organisers' public reference repo (pull updates only, never push).
 Commit and push after every significant result (finished experiment, working feature),
 with the ledger row updated in the same commit.
 
+## SOC expert subagent
+`.claude/agents/soc-expert.md` defines **soc-expert** — a senior SOC/IR lead consulted on
+investigation logic (complete IR responses, benign evidence, verdict reasoning). Read-only;
+returns general principles from real recorded tasks, never scenario-specific rules. Its advice
+is a hypothesis: test it (Jev bench or mimo run) before adopting.
+
 ## Working rules
 - Make changes in `src/bluesec1_agent/`; treat `src/bluesec1_client/` as a vendored dependency.
 - Optimise for: correct verdict > complete artifacts > minimal tool calls. Every prompt or loop
