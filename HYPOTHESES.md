@@ -99,6 +99,17 @@ Sources read as untrusted text (nothing installed): elastic/agent-skills `securi
 
 Not adopted: elastic's "most alerts are false positives" prior (our verdict is binary and both errors cost the task); prevalence checks across the fleet (costly in calls, graph may not hold fleet data).
 
+
+## Reasoning LLM × Jev collaboration (2026-10-08)
+
+Division of labour from data: mimo is better at the verdict (0–2 wrong per run vs Jev 5–7), Jev-built benign evidence scored higher (Q|ok ≈0.31 vs ≈0.21; possibly the payload shape, not Jev itself — compare against the capped mimo baseline exp-021).
+
+| ID | P | Hypothesis | Test |
+|---|---|---|---|
+| H-34 | P1 | **mimo decides, Jev picks the benign root cause** (`jev_evidence.py`): three Jev `choice` questions over observed entities — responsible account, legitimate launcher (not the alerted process), one in-role action item (script/file/cmdlet/registry) — each with a `none` option and a 0.4 confidence floor; 1–3 entity citations × ≤2 identifying fields; falls back to the LLM's capped evidence. | exp-025 vs exp-021 |
+| H-35 | P2 | **Jev completeness check for malicious:** Jev scores every observed entity attacker/benign; add confident attacker entities the LLM missed, drop confident benign ones. Jev role accuracy unproven. | Jev bench first |
+| H-36 | P3 | **Jev disagreement → targeted extra investigation:** LLM says benign but Jev P(attack) high → 2–3 more calls on disputed evidence (never an override; Jev's verdicts are worse). | mimo |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every

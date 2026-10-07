@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     )
     # Control experiment only: submit benign verdicts without legitimacy evidence (Jev agent).
     jev_benign_empty: bool = Field(default=False, validation_alias="JEV_BENIGN_EMPTY")
+    # H-34: Jev chooses benign root-cause citations for the LLM agent.
+    agent_jev_benign_evidence: bool = Field(
+        default=False, validation_alias="AGENT_JEV_BENIGN_EVIDENCE"
+    )
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

@@ -138,6 +138,7 @@ async def run(args: argparse.Namespace) -> None:
                 "payload_v2": settings.payload_v2,
                 "payload_tiers": settings.agent_payload_tiers,
                 "verdict_samples": settings.agent_verdict_samples,
+                "jev_benign_evidence": settings.agent_jev_benign_evidence,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -179,6 +180,10 @@ async def run(args: argparse.Namespace) -> None:
         agent: SimpleSGRAgent
         jev = None
         if settings.agent_kind == "sgr":
+            if settings.agent_jev_benign_evidence:
+                jev = JevClient(
+                    api_key=settings.llm_api_key.get_secret_value(), model=settings.jev_model
+                )
             agent = SimpleSGRAgent(
                 llm,
                 max_steps=settings.agent_max_steps,
@@ -193,6 +198,7 @@ async def run(args: argparse.Namespace) -> None:
                 payload_v2=settings.payload_v2,
                 payload_tiers=settings.agent_payload_tiers,
                 verdict_samples=settings.agent_verdict_samples,
+                jev_benign=jev,
             )
         else:
             jev = JevClient(

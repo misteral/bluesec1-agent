@@ -8,6 +8,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
+from bluesec1_agent.jev_client import JevClient
+from bluesec1_agent.jev_evidence import jev_root_cause_evidence
 from bluesec1_agent.llm import NextStepRequestError, StructuredStepClient, render_json
 from bluesec1_agent.models import FinishInvestigationRequest, NextStep
 from bluesec1_agent.review import (
@@ -205,6 +207,7 @@ class SimpleSGRAgent:
         payload_v2: bool = False,
         payload_tiers: bool = True,
         verdict_samples: int = 1,
+        jev_benign: JevClient | None = None,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -222,6 +225,8 @@ class SimpleSGRAgent:
             payload_v2: Stricter shaping (no artifact_observed; alert-first, ≤1 relation).
             payload_tiers: With payload_policy, also add missing tier rows to malicious
                 artifacts (exp-020: no gain for the LLM agent; benign cap did help).
+            jev_benign: H-34 — when set, Jev picks the benign root-cause citations from the
+                observed entities (the LLM still decides the verdict).
             verdict_samples: H-25 self-consistency — total verdict samples at the first finish
                 (LLM calls only); the majority verdict wins.
 
@@ -244,6 +249,7 @@ class SimpleSGRAgent:
         self.payload_v2 = payload_v2
         self.payload_tiers = payload_tiers
         self.verdict_samples = verdict_samples
+        self.jev_benign = jev_benign
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -501,6 +507,23 @@ class SimpleSGRAgent:
                         if isinstance(e, dict) and "id" in e
                     ],
                 )
+            submission = arguments.get("submission") or {}
+            if (
+                tool_name == "finish_investigation"
+                and self.jev_benign is not None
+                and submission.get("verdict") == "benign"
+            ):
+                cost_before = self.jev_benign.cost_usd
+                chosen = await jev_root_cause_evidence(
+                    self.jev_benign,
+                    book,
+                    alert if isinstance(alert, dict) else {},
+                    str(submission.get("reasoning") or ""),
+                )
+                self._task_stats["cost_usd"] += self.jev_benign.cost_usd - cost_before
+                self._task_stats["jev_benign_evidence"] = chosen is not None
+                if chosen:
+                    arguments["submission"] = {**submission, "legitimacy_evidence": chosen}
             redirected_from = None
             redirect = guard.redirect(tool_name, arguments, expand_enabled=self.expand_entity)
             if redirect is not None and redirect[0] in available_tools:
