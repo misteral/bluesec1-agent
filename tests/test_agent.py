@@ -391,3 +391,37 @@ def test_failed_review_turn_submits_the_draft_finish() -> None:
 
     assert result.successful_tasks == 1
     assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
+
+
+def test_self_consistency_submits_the_majority_verdict() -> None:
+    """Draft says benign, two extra samples say malicious → malicious is submitted."""
+    from bluesec1_agent.models import (
+        BenignFinishInvestigationSubmission,
+        FinishInvestigationEntityEvidence,
+    )
+
+    plan = two_step_plan()
+    benign = NextStep(
+        current_state="Looks legitimate.",
+        plan_remaining_steps_brief=["Submit benign."],
+        task_completed=True,
+        function=FinishInvestigationRequest(
+            tool="finish_investigation",
+            submission=BenignFinishInvestigationSubmission(
+                verdict="benign",
+                legitimacy_evidence=[
+                    FinishInvestigationEntityEvidence(
+                        anchor="entity", entity_id="process-1", property_fields=["pid"]
+                    )
+                ],
+                reasoning="Signed binary.",
+            ),
+        ),
+    )
+    session = FakeSession()
+    agent = SimpleSGRAgent(FakeStepClient([plan[0], benign, plan[1], plan[1]]), verdict_samples=3)
+
+    asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    submitted = session.calls[-1][1]["submission"]
+    assert submitted["verdict"] == "malicious"

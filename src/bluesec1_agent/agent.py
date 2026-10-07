@@ -1,5 +1,7 @@
 import asyncio
 import json
+import time
+from collections import Counter
 from typing import Any
 
 from loguru import logger
@@ -153,6 +155,10 @@ MAX_CONSECUTIVE_TASK_FAILURES = 2
 # Hard cap on one LLM step (all provider retries included). The runtime closes a run after
 # 15 min without requests; exp-016 lost its run to a review call that hung ~15 min.
 STEP_DEADLINE_SECONDS = 480
+# Force a verdict when the platform has not seen a request for this long: one more LLM step
+# (≤ STEP_DEADLINE_SECONDS) still fits in the 15-min idle window. exp-017 lost its run when
+# slow steps answered locally by the guard left the platform idle for 18 min.
+IDLE_FORCE_SECONDS = 360
 # A small model can loop on a guarded call forever (exp-004: 82 identical repeats). After this
 # many locally answered calls in a row, the next turn may only finish the investigation.
 # 3 was too eager: in exp-006 it forced verdicts after 1-2 real calls.
@@ -197,6 +203,8 @@ class SimpleSGRAgent:
         run_budget_usd: float | None = None,
         payload_policy: bool = False,
         payload_v2: bool = False,
+        payload_tiers: bool = True,
+        verdict_samples: int = 1,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -212,6 +220,10 @@ class SimpleSGRAgent:
             run_budget_usd: Stop leasing new tasks once total LLM spend reaches this (USD).
             payload_policy: Shape the final payload with the contract tiers and benign cap.
             payload_v2: Stricter shaping (no artifact_observed; alert-first, ≤1 relation).
+            payload_tiers: With payload_policy, also add missing tier rows to malicious
+                artifacts (exp-020: no gain for the LLM agent; benign cap did help).
+            verdict_samples: H-25 self-consistency — total verdict samples at the first finish
+                (LLM calls only); the majority verdict wins.
 
         Raises:
             ValueError: If the configured limit is not positive.
@@ -230,6 +242,8 @@ class SimpleSGRAgent:
         self.run_spent_usd = 0.0
         self.payload_policy = payload_policy
         self.payload_v2 = payload_v2
+        self.payload_tiers = payload_tiers
+        self.verdict_samples = verdict_samples
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -353,6 +367,8 @@ class SimpleSGRAgent:
 
         consecutive_guarded = 0
         platform_calls = 0
+        last_platform_request = time.monotonic()
+        verdict_sampled = False
         for step_index in range(1, self.max_steps + 1):
             reason = None
             if consecutive_guarded >= MAX_CONSECUTIVE_GUARDED:
@@ -361,6 +377,8 @@ class SimpleSGRAgent:
                 reason = f"tool-call budget reached ({platform_calls} calls)"
             elif step_index >= self.max_steps:
                 reason = "step budget exhausted"
+            elif time.monotonic() - last_platform_request >= IDLE_FORCE_SECONDS:
+                reason = "the platform idle timeout is near"
             if reason is not None:
                 logger.warning("Forcing finish_investigation: {}.", reason)
                 messages.append(
@@ -399,6 +417,13 @@ class SimpleSGRAgent:
                     else None
                 )
             review_pending = False
+            if (
+                isinstance(step.function, FinishInvestigationRequest)
+                and self.verdict_samples > 1
+                and not verdict_sampled
+            ):
+                verdict_sampled = True
+                step = await self._majority_verdict(messages, step)
             llm_stats = dict(getattr(self.llm, "last_step_stats", None) or {})
             tool_name = step.function.tool
             arguments = step.function.model_dump(
@@ -463,6 +488,7 @@ class SimpleSGRAgent:
                 arguments["submission"] = apply_payload_policy(
                     arguments.get("submission", {}),
                     book,
+                    tiers=self.payload_tiers,
                     v2=self.payload_v2,
                     alert_ids=[
                         e["id"]
@@ -494,6 +520,7 @@ class SimpleSGRAgent:
                 logger.warning("Rejected unavailable tool {} locally.", tool_name)
             else:
                 platform_calls += 1
+                last_platform_request = time.monotonic()
                 platform_tool, platform_arguments = self._platform_call(tool_name, arguments)
                 response = await session.call_tool(platform_tool, platform_arguments)
                 feedback = self._tool_feedback(response)
@@ -533,6 +560,35 @@ class SimpleSGRAgent:
         raise RuntimeError(
             f"Agent hit the {self.max_steps}-step limit without finish_investigation."
         )
+
+    async def _majority_verdict(self, messages: list[dict[str, Any]], draft: NextStep) -> NextStep:
+        """Sample more terminal steps on the same context; return one with the majority verdict.
+
+        Verdict flips between runs are the largest loss and variance source (exp-013/018/020);
+        extra samples cost LLM calls only, never platform tool calls.
+        """
+        samples = [draft]
+        for _ in range(self.verdict_samples - 1):
+            try:
+                sample = await asyncio.wait_for(
+                    self.llm.next_step(messages, final=True), STEP_DEADLINE_SECONDS
+                )
+            except (TimeoutError, NextStepRequestError) as exc:
+                logger.warning("Verdict sample failed: {}", exc)
+                continue
+            stats = dict(getattr(self.llm, "last_step_stats", None) or {})
+            self._task_stats["total_tokens"] += stats.get("total_tokens", 0)
+            self._task_stats["cost_usd"] += stats.get("cost_usd", 0.0)
+            if isinstance(sample.function, FinishInvestigationRequest):
+                samples.append(sample)
+        verdicts = [s.function.submission.verdict for s in samples]  # type: ignore[union-attr]
+        counts = Counter(verdicts)
+        majority = max(counts, key=lambda v: (counts[v], v == verdicts[0]))
+        self._task_stats["verdict_samples"] = verdicts
+        chosen = next(s for s in samples if s.function.submission.verdict == majority)  # type: ignore[union-attr]
+        if chosen is not draft:
+            logger.info("Self-consistency switched the verdict {} → {}.", verdicts[0], majority)
+        return chosen
 
     @staticmethod
     def _platform_call(tool_name: str, arguments: dict[str, Any]) -> tuple[str, dict[str, Any]]:

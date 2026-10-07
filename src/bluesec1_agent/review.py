@@ -282,6 +282,7 @@ def apply_payload_policy(
     book: EntityBook,
     *,
     benign_max_entities: int = 3,
+    tiers: bool = True,
     v2: bool = False,
     alert_ids: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -302,6 +303,8 @@ def apply_payload_policy(
         ]
         if kept:
             submission = {**submission, "ir_artifacts": kept}
+    if submission.get("verdict") == "malicious" and not tiers:
+        return shaped
     if submission.get("verdict") == "malicious":
         rows = list(submission.get("ir_artifacts") or [])
         present = {(r.get("entity_id"), r.get("kind")) for r in rows}

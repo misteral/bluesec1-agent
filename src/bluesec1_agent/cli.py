@@ -135,6 +135,8 @@ async def run(args: argparse.Namespace) -> None:
                 "finish_review": settings.agent_finish_review,
                 "payload_policy": settings.agent_payload_policy,
                 "payload_v2": settings.payload_v2,
+                "payload_tiers": settings.agent_payload_tiers,
+                "verdict_samples": settings.agent_verdict_samples,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -188,6 +190,8 @@ async def run(args: argparse.Namespace) -> None:
                 run_budget_usd=settings.llm_run_budget_usd,
                 payload_policy=settings.agent_payload_policy,
                 payload_v2=settings.payload_v2,
+                payload_tiers=settings.agent_payload_tiers,
+                verdict_samples=settings.agent_verdict_samples,
             )
         else:
             jev = JevClient(
