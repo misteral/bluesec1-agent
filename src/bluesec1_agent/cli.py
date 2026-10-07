@@ -8,6 +8,8 @@ import truststore
 from pydantic import ValidationError
 
 from bluesec1_agent.agent import SYSTEM_PROMPTS, SimpleSGRAgent
+from bluesec1_agent.jev_agent import JevNavigatorAgent
+from bluesec1_agent.jev_client import JevClient
 from bluesec1_agent.llm import OpenAIStructuredStepClient
 from bluesec1_agent.settings import Settings
 from bluesec1_agent.tracking import RunRecorder, git_state, sha256_text
@@ -98,6 +100,14 @@ async def run(args: argparse.Namespace) -> None:
             args.experiment,
             {
                 "experiment": args.experiment,
+                "agent_kind": settings.agent_kind,
+                "jev_model": settings.jev_model if settings.agent_kind != "sgr" else None,
+                "jev_call_budget": settings.jev_call_budget
+                if settings.agent_kind != "sgr"
+                else None,
+                "jev_attack_threshold": (
+                    settings.jev_attack_threshold if settings.agent_kind == "jev_only" else None
+                ),
                 "run_label": run_label,
                 "agent_name": agent_name,
                 "arena": arena,
@@ -116,7 +126,8 @@ async def run(args: argparse.Namespace) -> None:
         )
         print(f"Recording run artifacts to {recorder.directory}", file=sys.stderr)
     # Fail before CreateRun: a broken provider would otherwise abort every leased task.
-    await llm.preflight()
+    if settings.agent_kind != "jev_only":
+        await llm.preflight()
     if review_llm is not None:
         await review_llm.preflight()
     async with (
@@ -134,22 +145,44 @@ async def run(args: argparse.Namespace) -> None:
                 "implementation": "structured-generation-scenario-runtime-grpc",
                 "model": settings.llm_default_model,
                 "experiment": args.experiment,
+                "agent_kind": settings.agent_kind,
                 "commit": commit,
                 "system_prompt_sha": system_prompt_sha,
             },
         ) as client,
     ):
-        result = await SimpleSGRAgent(
-            llm,
-            max_steps=settings.agent_max_steps,
-            recorder=recorder,
-            system_prompt=system_prompt,
-            expand_entity=settings.agent_expand_entity,
-            finish_review=settings.agent_finish_review,
-            review_llm=review_llm,
-            review_budget_usd=settings.llm_review_budget_usd,
-            run_budget_usd=settings.llm_run_budget_usd,
-        ).run(client)
+        agent: SimpleSGRAgent
+        jev = None
+        if settings.agent_kind == "sgr":
+            agent = SimpleSGRAgent(
+                llm,
+                max_steps=settings.agent_max_steps,
+                recorder=recorder,
+                system_prompt=system_prompt,
+                expand_entity=settings.agent_expand_entity,
+                finish_review=settings.agent_finish_review,
+                review_llm=review_llm,
+                review_budget_usd=settings.llm_review_budget_usd,
+                run_budget_usd=settings.llm_run_budget_usd,
+            )
+        else:
+            jev = JevClient(
+                api_key=settings.llm_api_key.get_secret_value(), model=settings.jev_model
+            )
+            agent = JevNavigatorAgent(
+                jev,
+                final_mode=settings.agent_kind,
+                llm=llm if settings.agent_kind == "jev_llm" else None,
+                call_budget=settings.jev_call_budget,
+                attack_threshold=settings.jev_attack_threshold,
+                recorder=recorder,
+                run_budget_usd=settings.llm_run_budget_usd,
+            )
+        try:
+            result = await agent.run(client)
+        finally:
+            if jev is not None:
+                await jev.aclose()
     if review_llm is not None:
         await review_llm.aclose()
 

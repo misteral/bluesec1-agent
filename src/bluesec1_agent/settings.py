@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(validation_alias="LLM_BASE_URL", min_length=1)
     llm_api_key: SecretStr = Field(validation_alias="LLM_API_KEY", min_length=1)
     llm_default_model: str = Field(validation_alias="LLM_DEFAULT_MODEL", min_length=1)
+    # Which agent runs: `sgr` = SimpleSGRAgent (LLM loop); `jev_llm` = Jev navigates, LLM decides
+    # (H-18); `jev_only` = Jev navigates and decides (H-19). Separate classes, never mixed.
+    agent_kind: Literal["sgr", "jev_llm", "jev_only"] = Field(
+        default="sgr", validation_alias="AGENT_KIND"
+    )
+    jev_model: str = Field(default="typesafe/jev-1.13", validation_alias="JEV_MODEL")
+    jev_call_budget: int = Field(default=20, validation_alias="JEV_CALL_BUDGET", ge=1, le=95)
+    jev_attack_threshold: float = Field(
+        default=0.35, validation_alias="JEV_ATTACK_THRESHOLD", gt=0, lt=1
+    )
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
