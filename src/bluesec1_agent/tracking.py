@@ -9,6 +9,20 @@ from typing import Any
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 RUN_TASKS = 30  # tasks per competition run (organisers, 2026-10-06)
+# Platform run score ≈ PLATFORM_SCALE × Σ quality·(0.5 + 0.5·efficiency) / 30 (failed = 0).
+# Fitted on 8 runs on 2026-10-07 (exp-008…015): ratio spread 1.5 %; quality alone fails on the
+# low-efficiency run (exp-015). The efficiency weight (≈0.2–0.5) is an estimate, not a spec.
+PLATFORM_SCALE = 30.2
+
+
+def estimated_platform_score(tasks: list[dict[str, Any]]) -> float:
+    """Estimate the platform's run score from per-task quality and efficiency."""
+    total = sum(
+        float(t.get("quality_score") or 0.0) * (0.5 + 0.5 * float(t.get("efficiency_score") or 0.0))
+        for t in tasks
+        if t.get("completion_reason") == "terminated"
+    )
+    return round(PLATFORM_SCALE * total / RUN_TASKS, 3)
 
 
 def sha256_text(text: str) -> str:
@@ -136,6 +150,7 @@ def summarize_tasks(tasks: list[dict[str, Any]], config: dict[str, Any]) -> dict
         # Primary metric: the platform score tracks Σ quality / 30 with failed tasks as 0
         # (ratio ≈ 0.29 across 5 runs on 2026-10-07), not the per-task total_reward.
         "q30": round(completed_quality / RUN_TASKS, 4),
+        "score_est": estimated_platform_score(tasks),
         "run_id": config.get("run_id"),
         "model": config.get("model"),
         "commit": config.get("commit"),

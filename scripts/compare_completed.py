@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 
 RUNS = Path(__file__).resolve().parents[1] / "runs"
+sys.path.insert(0, str(RUNS.parent / "src"))
+
+from bluesec1_agent.tracking import estimated_platform_score  # noqa: E402
 
 
 def load(experiment: str) -> list[dict]:
@@ -20,17 +23,18 @@ def main() -> None:
     """Print completed-task means and the scenarios shared between runs."""
     by_run = {name: load(name) for name in sys.argv[1:]}
     print(
-        "| run | done/all | **q30** | reward | quality | effic. | calls | err% | benign "
+        "| run | done/all | **score~** | q30 | reward | quality | effic. | calls | err% | benign "
         "| tokens/task |"
     )
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
     for name, tasks in by_run.items():
         done = [t for t in tasks if t["completion_reason"] == "terminated"]
         n = len(done) or 1
         calls = sum(t["tool_calls"] for t in done) or 1
         print(
             f"| {name} | {len(done)}/{len(tasks)} "
-            f"| **{sum(t['quality_score'] for t in done) / 30:.3f}** "
+            f"| **{estimated_platform_score(tasks):.2f}** "
+            f"| {sum(t['quality_score'] for t in done) / 30:.3f} "
             f"| {sum(t['total_reward'] for t in done) / n:.1f} "
             f"| {sum(t['quality_score'] for t in done) / n:.3f} "
             f"| {sum(t['efficiency_score'] for t in done) / n:.3f} "
