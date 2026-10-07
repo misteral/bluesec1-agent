@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import re
 import signal
 import sys
 
@@ -95,7 +96,10 @@ async def run(args: argparse.Namespace) -> None:
     run_label = args.run_label or settings.remote_run_label or descriptive_label
     public_model = settings.llm_default_model
     if settings.public_opaque_labels and not (args.run_label or settings.remote_run_label):
-        run_label = "r" + sha256_text(descriptive_label)[:8]
+        # Keep the experiment number readable (user, 2026-10-07), hide the description.
+        number = re.match(r"exp-\d+[a-z]?", args.experiment)
+        suffix = sha256_text(descriptive_label)[:4]
+        run_label = f"{number.group(0)}-{suffix}" if number else f"r{suffix}"
     if settings.public_opaque_labels:
         public_model = "m" + sha256_text(f"{settings.agent_kind}:{settings.llm_default_model}")[:6]
     system_prompt = SYSTEM_PROMPTS[settings.agent_prompt]

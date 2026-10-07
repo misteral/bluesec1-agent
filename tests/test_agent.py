@@ -364,3 +364,30 @@ def test_review_turn_uses_review_model_within_budget() -> None:
     assert len(main.requests) == 2
     assert len(reviewer.requests) == 1
     assert "REVIEW BEFORE SUBMITTING" in reviewer.requests[0][-1]["content"]
+
+
+class FailingStepClient(FakeStepClient):
+    """A reviewer whose call fails like a stalled provider."""
+
+    async def next_step(self, messages: list[dict[str, Any]], *, final: bool = False) -> NextStep:
+        from bluesec1_agent.llm import NextStepRequestError
+
+        self.requests.append(messages)
+        raise NextStepRequestError("Model returned empty content for NextStep response.")
+
+
+def test_failed_review_turn_submits_the_draft_finish() -> None:
+    """A broken review must not cost the task (exp-016 lost its run to a stalled review)."""
+    plan = two_step_plan()
+    session = FakeSession()
+    agent = SimpleSGRAgent(
+        FakeStepClient([plan[0], plan[1]]),
+        finish_review=True,
+        review_llm=FailingStepClient([]),
+        review_budget_usd=1.0,
+    )
+
+    result = asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    assert result.successful_tasks == 1
+    assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]

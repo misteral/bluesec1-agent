@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -5,7 +6,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from bluesec1_agent.guard import CallGuard, IdRegistry, parse_jsonish
-from bluesec1_agent.llm import StructuredStepClient, render_json
+from bluesec1_agent.llm import NextStepRequestError, StructuredStepClient, render_json
 from bluesec1_agent.models import FinishInvestigationRequest, NextStep
 from bluesec1_agent.review import (
     EntityBook,
@@ -149,6 +150,9 @@ created_scheduled_task, accessed_process) to get only what matters.
 """.strip()
 
 MAX_CONSECUTIVE_TASK_FAILURES = 2
+# Hard cap on one LLM step (all provider retries included). The runtime closes a run after
+# 15 min without requests; exp-016 lost its run to a review call that hung ~15 min.
+STEP_DEADLINE_SECONDS = 480
 # A small model can loop on a guarded call forever (exp-004: 82 identical repeats). After this
 # many locally answered calls in a row, the next turn may only finish the investigation.
 # 3 was too eager: in exp-006 it forced verdicts after 1-2 real calls.
@@ -330,6 +334,7 @@ class SimpleSGRAgent:
         book.learn(alert)
         reviewed = False
         review_pending = False
+        draft_step: NextStep | None = None
 
         # The tool catalog is sent once here; tool feedback carries only per-call data.
         messages: list[dict[str, Any]] = [
@@ -369,7 +374,19 @@ class SimpleSGRAgent:
                 and self.review_spent_usd < self.review_budget_usd
             ):
                 step_llm = self.review_llm
-            step = await step_llm.next_step(messages, final=reason is not None or review_pending)
+            try:
+                step = await asyncio.wait_for(
+                    step_llm.next_step(messages, final=reason is not None or review_pending),
+                    STEP_DEADLINE_SECONDS,
+                )
+            except (TimeoutError, NextStepRequestError) as exc:
+                if not (review_pending and draft_step is not None):
+                    raise
+                # The review is optional: submit the draft the model already chose.
+                logger.warning("Review turn failed ({}); submitting the draft finish.", exc)
+                self._task_stats["review_fallback"] = f"{type(exc).__name__}: {exc}"[:300]
+                step = draft_step
+                step_llm = self.llm
             if step_llm is not self.llm:
                 review_cost = float(
                     (getattr(step_llm, "last_step_stats", None) or {}).get("cost_usd", 0.0)
@@ -423,6 +440,7 @@ class SimpleSGRAgent:
                     issues = gate_issues(submission, book, seen_ids)
                     self._task_stats["review_issues"] = issues
                     self._task_stats["draft_verdict"] = submission.get("verdict")
+                    draft_step = step
                     feedback = {
                         "status": "review",
                         "local_guard": "finish_review",
