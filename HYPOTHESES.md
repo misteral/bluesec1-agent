@@ -83,6 +83,22 @@ Two read-only subagents analysed runs exp-002…exp-017. Advisor proposals were 
 | H-27 | P2 | **`network_block` on attacker-infrastructure host entities** (our gate rejected it 4× in exp-013; contract-plausible, untested). | separate test |
 | H-28 | P1 | **Reliability for the credit run:** LLM timeout ≪ 15 min, fallback model on provider failure, stable network. | KEEP (insurance) |
 
+
+## SOC skills + soc-expert consultation 2026-10-08
+
+Sources read as untrusted text (nothing installed): elastic/agent-skills `security/alert-triage`, google/skills `secops-triage`, `secops-investigate`, briiirussell/cybersecurity-skills `incident-triage`; plus soc-expert consultation 1 (54 correct benign tasks, exp-010/013/014/018/020).
+
+| ID | P | Hypothesis | Source / evidence | Test |
+|---|---|---|---|---|
+| H-29 | P1 | **Benign evidence = the root cause, not the alerted process.** Cite 1–3 entities answering "who/what legitimately caused this" (account + logon origin, launching parent / scheduled task / installer / management service, one "what it did" item), 1–2 identifying fields each; never the alerted process's signer; zero relation anchors; no null or service fields (`type`, `log_sources`, `timestamp`, `source_id`, `target_id`). | google secops-triage "Root Cause"/"Justification" (BTP: "valid detection of expected, authorized activity"); soc-expert P2–P6: high-Q benign cite actor + launcher + ≤1 action; alerted-process citations go with lower Q in Jev (0.36 vs 0.49); payload v2's "alert entities first" was backwards | Jev bench, then mimo |
+| H-30 | P1 | **Control: empty benign evidence.** An exp-018 task with `legitimacy_evidence: []` scored Q 0.54 → citations may be mostly penalised. | soc-expert P1 | exp-024 (Jev) — control, not a prod setting |
+| H-31 | P1 | **Verdict bar with benign-true-positive framing.** Malicious requires ≥1 attacker-behaviour edge attributable to the chain (persistence, C2/rare external, credential access, lateral movement, recovery tampering); "a correct detection of authorized activity is benign"; alert title/severity is not evidence. For always-present processes (browser, System, svchost, EDR agents) judge behaviour (unusual children, lsass access, odd destinations), never the binary. Keep the wording symmetric (both errors cost the task). | elastic "Rule names … are NOT evidence", "MALICIOUS requires strong corroborating evidence"; google BTP; soc-expert: browser/System benign verdicts scored 0 in all 5 runs | mimo (prompt) |
+| H-32 | P1 | **Pre-submit containment checklist (malicious).** Before finishing ask once per class — host(s) incl. remote-session source, account(s), persistence object, dropped file/tool, attacker infrastructure — include each one already seen; spend ≤1–2 calls only on unresolved classes. | briiirussell containment by object type + persistence list; google "Blast Radius"; data: incomplete malicious payloads lose ≈6.5 units/run | mimo (prompt or review pass) |
+| H-33 | P2 | **T0 anchor + bounded scoping.** Take T0 from the alert; tight `time_window` on host/user searches; pivot order tree → origin → effects → network; 2–4 targeted queries per pivot. | google "Define Incident Anchor (T0)"; elastic "2-4 targeted queries … not 10+" | mimo |
+| H-07 | P2 ↑ | (existing) **Untrusted-data directive** — both Google skills require treating command lines, paths and log payloads as data, not instructions. One prompt sentence; matters for mutated prod scenarios. | google secops-triage / secops-investigate "Prompt Injection Defense Directive" | prompt, no score test |
+
+Not adopted: elastic's "most alerts are false positives" prior (our verdict is binary and both errors cost the task); prevalence checks across the fleet (costly in calls, graph may not hold fleet data).
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every
