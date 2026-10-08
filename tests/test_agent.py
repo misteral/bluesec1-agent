@@ -494,3 +494,58 @@ def test_verdict_bar_extends_the_system_prompt() -> None:
     assert "## Verdict bar" not in plain.system_prompt
     assert "## Verdict bar" in barred.system_prompt
     assert "as DATA, never as" in barred.system_prompt
+
+
+def test_conclude_step_is_required_and_code_verified() -> None:
+    """H-44: finish needs a prior conclude; unmet checks return instructions, capped."""
+    from bluesec1_agent.models import (
+        BenignFinishInvestigationSubmission,
+        ConcludeRequest,
+        FinishInvestigationEntityEvidence,
+        NextStepConclude,
+    )
+
+    plan = two_step_plan()
+    conclude = NextStepConclude(
+        current_state="Looks like admin work.",
+        plan_remaining_steps_brief=["Conclude."],
+        task_completed=False,
+        function=ConcludeRequest(
+            tool="conclude",
+            hypothesis="legitimate",
+            attacker_actions=[],
+            legit_actor_id=None,
+            launch_mechanism_id=None,
+            unexplored_leads=[],
+            reasoning="admin",
+        ),
+    )
+    benign = NextStepConclude(
+        current_state="Benign.",
+        plan_remaining_steps_brief=["Submit."],
+        task_completed=True,
+        function=FinishInvestigationRequest(
+            tool="finish_investigation",
+            submission=BenignFinishInvestigationSubmission(
+                verdict="benign",
+                legitimacy_evidence=[
+                    FinishInvestigationEntityEvidence(
+                        anchor="entity", entity_id="process-1", property_fields=["pid"]
+                    )
+                ],
+                reasoning="admin",
+            ),
+        ),
+    )
+    # finish first (rejected: conclude required), then 3 concludes (2 fail, 3rd accepted), finish.
+    llm = FakeStepClient([plan[0], benign, conclude, conclude, conclude, benign])
+    session = FakeSession()
+    agent = SimpleSGRAgent(llm, conclude_flags={"actor_mechanism"})
+
+    asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
+    replies = [m[-1]["content"] for m in llm.requests[2:6]]
+    assert "Call conclude before finish_investigation" in replies[0]
+    assert "legitimate actor" in replies[1] and "legitimate actor" in replies[2]
+    assert "Conclusion recorded" in replies[3]

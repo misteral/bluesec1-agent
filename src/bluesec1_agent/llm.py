@@ -12,10 +12,12 @@ from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import ValidationError
 
 from bluesec1_agent.models import (
+    CONCLUDE_STEP_RESPONSE_FORMAT,
     FINAL_STEP_RESPONSE_FORMAT,
     NEXT_STEP_RESPONSE_FORMAT,
     FinishInvestigationRequest,
     NextStep,
+    NextStepConclude,
 )
 
 STRUCTURED_OUTPUT_INSTRUCTION = """
@@ -103,6 +105,7 @@ class OpenAIStructuredStepClient:
         max_retries: int,
         response_format: ResponseFormatMode = "json_schema",
         reasoning_effort: str | None = None,
+        allow_conclude: bool = False,
         client: AsyncOpenAI | None = None,
     ) -> None:
         """Initialize an OpenAI-compatible structured step generator.
@@ -125,9 +128,13 @@ class OpenAIStructuredStepClient:
         self.response_format = response_format
         # OpenRouter unified reasoning control (low/medium/high); None = provider default.
         self.reasoning_effort = reasoning_effort
+        # H-44: a separate step schema that also offers the agent-side `conclude` tool.
+        self.allow_conclude = allow_conclude
         self.last_step_stats: dict[str, Any] = {}
         self._instruction = STRUCTURED_OUTPUT_INSTRUCTION
-        self._response_format: dict[str, Any] = NEXT_STEP_RESPONSE_FORMAT
+        self._response_format: dict[str, Any] = (
+            CONCLUDE_STEP_RESPONSE_FORMAT if allow_conclude else NEXT_STEP_RESPONSE_FORMAT
+        )
         if response_format == "json_object":
             self._instruction = (
                 f"{STRUCTURED_OUTPUT_INSTRUCTION}\n\n{JSON_OBJECT_SCHEMA_INSTRUCTION}"
@@ -282,7 +289,9 @@ class OpenAIStructuredStepClient:
             stats["cost_usd"] += float(getattr(usage, "cost", 0.0) or 0.0)
 
             try:
-                step = parse_next_step_payload(raw_content)
+                step = parse_next_step_payload(
+                    raw_content, NextStepConclude if self.allow_conclude else NextStep
+                )
                 if final and not isinstance(step.function, FinishInvestigationRequest):
                     raise ValueError("Only finish_investigation is allowed on this turn.")
             except ValueError as exc:
@@ -387,7 +396,7 @@ def extract_json_object(raw_content: str) -> str:
     return match.group(0) if match is not None else stripped
 
 
-def parse_next_step_payload(raw_content: str) -> NextStep:
+def parse_next_step_payload(raw_content: str, model: type = NextStep) -> NextStep:
     """Validate one raw provider reply as a consistent `NextStep`.
 
     Args:
@@ -404,7 +413,7 @@ def parse_next_step_payload(raw_content: str) -> NextStep:
 
     normalized_content = extract_json_object(raw_content)
     try:
-        step = NextStep.model_validate_json(normalized_content)
+        step = model.model_validate_json(normalized_content)
     except ValidationError as exc:
         raise ValueError("Model returned invalid NextStep JSON.") from exc
 

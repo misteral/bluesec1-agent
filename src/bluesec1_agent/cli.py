@@ -74,6 +74,7 @@ async def run(args: argparse.Namespace) -> None:
         max_retries=settings.llm_max_step_retries,
         response_format=settings.llm_response_format,
         reasoning_effort=settings.llm_reasoning_effort,
+        allow_conclude=bool(settings.agent_conclude_flags),
     )
     review_llm = None
     if settings.llm_review_model:
@@ -146,6 +147,7 @@ async def run(args: argparse.Namespace) -> None:
                 "review_precision": settings.agent_review_precision,
                 "benign_host_check": settings.agent_benign_host_check,
                 "verdict_bar": settings.agent_verdict_bar,
+                "conclude_flags": settings.agent_conclude_flags,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -211,6 +213,9 @@ async def run(args: argparse.Namespace) -> None:
                 review_precision=settings.agent_review_precision,
                 benign_host_check=settings.agent_benign_host_check,
                 verdict_bar=settings.agent_verdict_bar,
+                conclude_flags={
+                    f.strip() for f in settings.agent_conclude_flags.split(",") if f.strip()
+                },
             )
         else:
             jev = JevClient(

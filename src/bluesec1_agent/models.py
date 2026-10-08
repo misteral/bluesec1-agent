@@ -444,3 +444,58 @@ FINAL_STEP_RESPONSE_FORMAT = {
         "schema": build_strict_json_schema(FinalStep),
     },
 }
+
+
+# ---- H-44: SGR `conclude` step (separate schema; the default NextStep is unchanged) ----
+
+AttackCategory = Literal[
+    "persistence",
+    "attacker_infrastructure",
+    "credential_access",
+    "lateral_movement_or_remote_execution",
+    "recovery_tampering_or_destruction",
+    "business_data_tampering",
+    "unknown_tool_execution",
+    "defense_evasion",
+    "exfiltration",
+]
+
+
+class AttackerAction(StrictModel):
+    """One observed attacker action, tied to an entity or relation id that shows it."""
+
+    category: AttackCategory
+    evidence_id: str
+
+
+class ConcludeRequest(StrictModel):
+    """Agent-side step before finishing: a structured, code-verified conclusion."""
+
+    tool: Literal["conclude"]
+    hypothesis: Literal["attack", "legitimate"]
+    attacker_actions: list[AttackerAction]
+    legit_actor_id: str | None = None
+    launch_mechanism_id: str | None = None
+    unexplored_leads: list[str]
+    reasoning: ToolReasoning
+
+
+class NextStepConclude(StrictModel):
+    """NextStep variant whose function may also be `conclude`."""
+
+    current_state: str
+    plan_remaining_steps_brief: list[str] = Field(min_length=1, max_length=5)
+    task_completed: bool
+    function: ConcludeRequest | InvestigationFunction = Field(
+        description="Execute the first remaining step."
+    )
+
+
+CONCLUDE_STEP_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "bluesec1_next_step_conclude",
+        "strict": True,
+        "schema": build_strict_json_schema(NextStepConclude),
+    },
+}
