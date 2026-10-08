@@ -425,3 +425,41 @@ def test_self_consistency_submits_the_majority_verdict() -> None:
 
     submitted = session.calls[-1][1]["submission"]
     assert submitted["verdict"] == "malicious"
+
+
+def test_benign_host_check_asks_once_then_accepts() -> None:
+    """H-39: the first benign finish gets one host-window reminder; the second is submitted."""
+    from bluesec1_agent.models import (
+        BenignFinishInvestigationSubmission,
+        FinishInvestigationEntityEvidence,
+    )
+
+    plan = two_step_plan()
+    benign = NextStep(
+        current_state="Routine admin activity.",
+        plan_remaining_steps_brief=["Submit benign."],
+        task_completed=True,
+        function=FinishInvestigationRequest(
+            tool="finish_investigation",
+            submission=BenignFinishInvestigationSubmission(
+                verdict="benign",
+                legitimacy_evidence=[
+                    FinishInvestigationEntityEvidence(
+                        anchor="entity", entity_id="process-1", property_fields=["pid"]
+                    )
+                ],
+                reasoning="Admin.",
+            ),
+        ),
+    )
+    llm = FakeStepClient([plan[0], benign, benign])
+    session = FakeSession()
+
+    asyncio.run(
+        SimpleSGRAgent(llm, benign_host_check=True).run(
+            cast(RemoteBenchmarkClient, FakeClient(session))
+        )
+    )
+
+    assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
+    assert "Before closing as benign" in llm.requests[2][-1]["content"]

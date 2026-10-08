@@ -161,6 +161,15 @@ STEP_DEADLINE_SECONDS = 480
 # (≤ STEP_DEADLINE_SECONDS) still fits in the 15-min idle window. exp-017 lost its run when
 # slow steps answered locally by the guard left the platform idle for 18 min.
 IDLE_FORCE_SECONDS = 360
+# H-39 (soc-expert consultation 2): verdict errors "stopped too early" / "misread inbound".
+BENIGN_HOST_CHECK = (
+    "Before closing as benign: an alert points at a host and a time, not only at one process. "
+    "(1) What else happened on this host around the alert time? Search the host with a tight "
+    "time_window (process creation, logons, file writes). (2) For inbound connections or "
+    "logons, who is on the other end, and is the pattern repeated failures or periodic? "
+    "If you have already checked both, re-submit the same verdict; otherwise spend 1–3 "
+    "targeted calls, then submit."
+)
 # A small model can loop on a guarded call forever (exp-004: 82 identical repeats). After this
 # many locally answered calls in a row, the next turn may only finish the investigation.
 # 3 was too eager: in exp-006 it forced verdicts after 1-2 real calls.
@@ -210,6 +219,8 @@ class SimpleSGRAgent:
         jev_benign: JevClient | None = None,
         no_telemetry: bool = False,
         benign_empty: bool = False,
+        review_precision: bool = False,
+        benign_host_check: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -254,6 +265,8 @@ class SimpleSGRAgent:
         self.jev_benign = jev_benign
         self.no_telemetry = no_telemetry
         self.benign_empty = benign_empty
+        self.review_precision = review_precision
+        self.benign_host_check = benign_host_check
         self.system_prompt = (
             f"{system_prompt}\n\n{EXPAND_PROMPT_ADDON}" if expand_entity else system_prompt
         )
@@ -359,6 +372,7 @@ class SimpleSGRAgent:
         reviewed = False
         review_pending = False
         draft_step: NextStep | None = None
+        host_checked = False
 
         # The tool catalog is sent once here; tool feedback carries only per-call data.
         messages: list[dict[str, Any]] = [
@@ -466,6 +480,29 @@ class SimpleSGRAgent:
             )
 
             server_result: TaskResult | None = None
+            if (
+                tool_name == "finish_investigation"
+                and self.benign_host_check
+                and not host_checked
+                and not reviewed
+                and (arguments.get("submission") or {}).get("verdict") == "benign"
+            ):
+                host_checked = True
+                self._task_stats["benign_host_check"] = True
+                feedback = {
+                    "status": "check",
+                    "local_guard": "benign_host_check",
+                    "message": BENIGN_HOST_CHECK,
+                }
+                self._record_step(session.task_id, step_index, step, arguments, feedback, llm_stats)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": render_json(feedback),
+                        "tool_call_id": tool_call_id,
+                    }
+                )
+                continue
             if tool_name == "finish_investigation" and self.finish_review:
                 submission = arguments.get("submission", {})
                 seen_ids = set(registry.kinds) | set(book.entities)
@@ -480,7 +517,9 @@ class SimpleSGRAgent:
                     feedback = {
                         "status": "review",
                         "local_guard": "finish_review",
-                        "message": review_message(submission, book, issues),
+                        "message": review_message(
+                            submission, book, issues, precision=self.review_precision
+                        ),
                     }
                     logger.info("Finish review requested ({} gate issues).", len(issues))
                     self._record_step(

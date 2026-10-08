@@ -141,6 +141,8 @@ async def run(args: argparse.Namespace) -> None:
                 "jev_benign_evidence": settings.agent_jev_benign_evidence,
                 "payload_no_telemetry": settings.payload_no_telemetry,
                 "benign_empty": settings.agent_benign_empty,
+                "review_precision": settings.agent_review_precision,
+                "benign_host_check": settings.agent_benign_host_check,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -203,6 +205,8 @@ async def run(args: argparse.Namespace) -> None:
                 jev_benign=jev,
                 no_telemetry=settings.payload_no_telemetry,
                 benign_empty=settings.agent_benign_empty,
+                review_precision=settings.agent_review_precision,
+                benign_host_check=settings.agent_benign_host_check,
             )
         else:
             jev = JevClient(

@@ -245,8 +245,26 @@ def gate_issues(
     return issues
 
 
-def review_message(submission: dict[str, Any], book: EntityBook, issues: list[str]) -> str:
-    """Build the single pre-submission review prompt."""
+PRECISION_CHECKLIST = (
+    "Re-check: (1) is the verdict right — a signed or system binary alone proves nothing; "
+    "(2) for malicious, report ONE row per real attacker object, by category: compromised hosts "
+    "(including the source of a remote session), accounts used or created, persistence objects, "
+    "dropped tools/scripts on disk, attacker processes, data files the attacker modified or "
+    "encrypted, external attacker endpoints. Do NOT report telemetry records (cmdlet "
+    "invocations, network connection records), unrelated user or system activity, or "
+    "artifact_observed when a specific kind fits. Precision matters: extra rows lower the score. "
+    "Then call finish_investigation with the final payload."
+)
+
+
+def review_message(
+    submission: dict[str, Any], book: EntityBook, issues: list[str], *, precision: bool = False
+) -> str:
+    """Build the single pre-submission review prompt.
+
+    `precision` (H-40, soc-expert consultation 2): the default "report EVERY entity" wording
+    inflated payloads (rows ↑ in 23/45 malicious tasks without quality gain).
+    """
     lines = [
         "REVIEW BEFORE SUBMITTING (no tool call is spent on this turn).",
         f"Your draft verdict: {submission.get('verdict')}.",
@@ -257,6 +275,11 @@ def review_message(submission: dict[str, Any], book: EntityBook, issues: list[st
     lines += [
         "Entities you observed in this task (id, type, label):",
         *(f"- {e['entity_id']} | {e['type']} | {e['label']}" for e in book.catalogue()),
+    ]
+    if precision:
+        lines.append(PRECISION_CHECKLIST)
+        return "\n".join(lines)
+    lines += [
         "Re-check: (1) is the verdict right — a signed or system binary alone proves nothing; "
         "(2) for malicious, is EVERY attacker-related entity above reported with a fitting kind "
         "(hosts, accounts, processes, files, persistence, registry, tickets), and nothing "
