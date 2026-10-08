@@ -5,6 +5,7 @@ against what the agent actually saw, and the model gets one review turn with the
 entities it observed. Neither costs a platform tool call.
 """
 
+import ipaddress
 from typing import Any
 
 from bluesec1_agent.guard import parse_jsonish
@@ -84,14 +85,37 @@ FORENSIC_KIND_BY_TYPE: dict[str, str] = {
 TELEMETRY_TYPES = {"powershell_cmdlet_invocation", "network_connection"}
 
 
-def drop_telemetry(rows: list[dict[str, str]], book: "EntityBook") -> list[dict[str, str]]:
-    """Remove artifact rows whose entity is a telemetry record; never empties the list."""
-    kept = [
-        r
-        for r in rows
-        if (book.entities.get(r.get("entity_id", "")) or {}).get("type") not in TELEMETRY_TYPES
-    ]
-    return kept or rows
+def is_public_ip(value: str) -> bool:
+    """True for a routable public address (not private, loopback, link-local or reserved)."""
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return False
+    return address.is_global
+
+
+def drop_telemetry(
+    rows: list[dict[str, str]], book: "EntityBook", *, keep_c2: bool = False
+) -> list[dict[str, str]]:
+    """Remove artifact rows whose entity is a telemetry record; never empties the list.
+
+    `keep_c2` (G1, organisers' reference walkthrough, quality 1.0): a connection record that
+    involves a public address is the attacker's channel and is reported as `network_block`;
+    connections between internal addresses and cmdlet invocations are still dropped.
+    """
+    kept = []
+    for row in rows:
+        entity = book.entities.get(row.get("entity_id", "")) or {}
+        if entity.get("type") not in TELEMETRY_TYPES:
+            kept.append(row)
+        elif (
+            keep_c2
+            and entity.get("type") == "network_connection"
+            and any(is_public_ip(ip) for ip in entity.get("ips", []))
+        ):
+            kept.append({**row, "kind": "network_block"})
+    unique = list({(r.get("entity_id"), r.get("kind")): r for r in kept}.values())
+    return unique or rows
 
 
 def dual_tier_artifacts(
@@ -163,6 +187,13 @@ class EntityBook:
                 "type": value["type"],
                 "label": self._label(properties),
                 "fields": sorted(key for key, item in properties.items() if item is not None),
+                "ips": sorted(
+                    {
+                        str(item)
+                        for key, item in properties.items()
+                        if item and isinstance(item, str) and "ip" in key.lower()
+                    }
+                ),
             }
         for item in value.values():
             if isinstance(item, dict | list | str):
@@ -251,14 +282,31 @@ PRECISION_CHECKLIST = (
     "(including the source of a remote session), accounts used or created, persistence objects, "
     "dropped tools/scripts on disk, attacker processes, data files the attacker modified or "
     "encrypted, external attacker endpoints. Do NOT report telemetry records (cmdlet "
-    "invocations, network connection records), unrelated user or system activity, or "
+    "invocations, internal network connection records), unrelated user or system activity, or "
     "artifact_observed when a specific kind fits. Precision matters: extra rows lower the score. "
     "Then call finish_investigation with the final payload."
 )
 
 
+# G1 / G2 additions to the precision checklist (organisers' reference walkthrough; soc-expert:
+# malicious tasks with an identity row Q 0.65 vs 0.54 without).
+C2_LINE = (
+    "The attacker's outbound channel to a public address is reported as network_block on that "
+    "connection record."
+)
+IDENTITY_LINE = (
+    "Always include identity_to_rotate for the account whose session ran the attacker's code "
+    "(unless it is a builtin system account)."
+)
+
+
 def review_message(
-    submission: dict[str, Any], book: EntityBook, issues: list[str], *, precision: bool = False
+    submission: dict[str, Any],
+    book: EntityBook,
+    issues: list[str],
+    *,
+    precision: bool = False,
+    extra_lines: tuple[str, ...] = (),
 ) -> str:
     """Build the single pre-submission review prompt.
 
@@ -278,6 +326,7 @@ def review_message(
     ]
     if precision:
         lines.append(PRECISION_CHECKLIST)
+        lines.extend(extra_lines)
         return "\n".join(lines)
     lines += [
         "Re-check: (1) is the verdict right — a signed or system binary alone proves nothing; "
@@ -337,6 +386,7 @@ def apply_payload_policy(
     tiers: bool = True,
     v2: bool = False,
     no_telemetry: bool = False,
+    keep_c2: bool = False,
     alert_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Contract-derived payload shaping (exp-014 showed +0.06 quality in both verdict groups).
@@ -353,7 +403,9 @@ def apply_payload_policy(
     if no_telemetry and submission.get("verdict") == "malicious":
         submission = {
             **submission,
-            "ir_artifacts": drop_telemetry(list(submission.get("ir_artifacts") or []), book),
+            "ir_artifacts": drop_telemetry(
+                list(submission.get("ir_artifacts") or []), book, keep_c2=keep_c2
+            ),
         }
         shaped = dict(submission)
     if v2 and submission.get("verdict") == "malicious":

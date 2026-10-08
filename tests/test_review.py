@@ -190,3 +190,42 @@ def test_drop_telemetry_removes_cmdlet_and_connection_rows() -> None:
         {"entity_id": "n1", "kind": "network_block"},
     ]
     assert [r["entity_id"] for r in drop_telemetry(rows, book)] == ["proc-1"]
+
+
+def test_keep_c2_keeps_public_connections_as_network_block() -> None:
+    """G1: a connection with a public address is the attacker channel; internal ones drop."""
+    from bluesec1_agent.review import drop_telemetry, is_public_ip
+
+    assert is_public_ip("8.8.8.8") and not is_public_ip("10.1.2.3") and not is_public_ip("x")
+    book = make_book()
+    book.learn(
+        [
+            {
+                "id": "c2",
+                "type": "network_connection",
+                "properties": {"dest_ip": "8.8.8.8", "src_ip": "10.0.0.5"},
+            },
+            {
+                "id": "lan",
+                "type": "network_connection",
+                "properties": {"dest_ip": "10.0.0.9", "src_ip": "10.0.0.5"},
+            },
+            {
+                "id": "cm",
+                "type": "powershell_cmdlet_invocation",
+                "properties": {"command_name": "x"},
+            },
+        ]
+    )
+    rows = [
+        {"entity_id": "proc-1", "kind": "process_observed"},
+        {"entity_id": "c2", "kind": "artifact_observed"},
+        {"entity_id": "lan", "kind": "network_block"},
+        {"entity_id": "cm", "kind": "artifact_observed"},
+    ]
+    kept = drop_telemetry(rows, book, keep_c2=True)
+    assert {(r["entity_id"], r["kind"]) for r in kept} == {
+        ("proc-1", "process_observed"),
+        ("c2", "network_block"),
+    }
+    assert {r["entity_id"] for r in drop_telemetry(rows, book)} == {"proc-1"}

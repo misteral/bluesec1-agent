@@ -14,6 +14,8 @@ from bluesec1_agent.jev_evidence import jev_root_cause_evidence
 from bluesec1_agent.llm import NextStepRequestError, StructuredStepClient, render_json
 from bluesec1_agent.models import FinishInvestigationRequest, NextStep
 from bluesec1_agent.review import (
+    C2_LINE,
+    IDENTITY_LINE,
     EntityBook,
     apply_payload_policy,
     gate_issues,
@@ -284,6 +286,8 @@ class SimpleSGRAgent:
         benign_host_check: bool = False,
         verdict_bar: bool = False,
         conclude_flags: set[str] | None = None,
+        keep_c2: bool = False,
+        rotate_identity: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -337,6 +341,8 @@ class SimpleSGRAgent:
             self.system_prompt = f"{self.system_prompt}\n\n{VERDICT_PROMPT_ADDON}"
         # H-44: SGR conclude step with code-verified checks (empty/None = disabled).
         self.conclude_flags = set(conclude_flags or ())
+        self.keep_c2 = keep_c2
+        self.rotate_identity = rotate_identity
         if self.conclude_flags:
             self.system_prompt = f"{self.system_prompt}\n\n{CONCLUDE_PROMPT_ADDON}"
         self._task_stats: dict[str, Any] = {}
@@ -638,7 +644,18 @@ class SimpleSGRAgent:
                         "status": "review",
                         "local_guard": "finish_review",
                         "message": review_message(
-                            submission, book, issues, precision=self.review_precision
+                            submission,
+                            book,
+                            issues,
+                            precision=self.review_precision,
+                            extra_lines=tuple(
+                                line
+                                for line, on in (
+                                    (C2_LINE, self.keep_c2),
+                                    (IDENTITY_LINE, self.rotate_identity),
+                                )
+                                if on
+                            ),
                         ),
                     }
                     logger.info("Finish review requested ({} gate issues).", len(issues))
@@ -663,6 +680,7 @@ class SimpleSGRAgent:
                     tiers=self.payload_tiers,
                     v2=self.payload_v2,
                     no_telemetry=self.no_telemetry,
+                    keep_c2=self.keep_c2,
                     alert_ids=[
                         e["id"]
                         for e in (

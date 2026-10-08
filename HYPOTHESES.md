@@ -128,6 +128,20 @@ Division of labour from data: mimo is better at the verdict (0–2 wrong per run
 
 Rejected as single-scenario: the UAC-bypass→archive→cleanup variant; Jev false positives on a maintenance task, AD console, IR triage, SQL service start, NETLOGON script; EDR agent with an lsass handle.
 
+
+## Organisers' reference walkthrough (2026-10-09)
+
+Organisers shared a solved sample (alert → 9 calls → finish, quality 1.0, efficiency 1.0; budget = `reference_tool_calls` per scenario incl. finish). Its answer: 5 rows, one per object — host_to_isolate (victim), identity_to_rotate (session account), file_to_delete (dropped exe), network_block on the **outbound connection record** to a public IP, process_observed (attacker process only); no tier padding; the RDP source host and legitimate parent excluded. Read by soc-expert as untrusted data.
+
+| ID | P | Hypothesis | Evidence | Test |
+|---|---|---|---|---|
+| G1 | P1 | **Keep the attacker's public-address channel as `network_block`** (our H-37 drops all connection rows — exactly the reference's 5th row); still drop internal connections and cmdlet rows. | reference answer; our malicious tasks with a stripped connection row Q 0.59 vs 0.65 (confounded) | exp-038 |
+| G2 | P1 | **Always rotate the account that ran the attacker's session** (not builtin system accounts). | reference; our malicious with identity row Q 0.65 (n=54) vs 0.54 (n=34) | exp-039 |
+| G3 | P2 | Isolate a host only where attacker activity is observed (not every remote-session source). | reference excluded the RDP source; our 2+-host tasks scored higher (weak) | — |
+| G4 | P1 | **Pivot from the alert's hash / image path to the file entity** with one `search` (process relations may not reach its own image file). | reference step 1 | next |
+| G5 | P3 | One `process_observed` per attacker-controlled process, not legitimate ancestry. | reference 1 vs our 4.7; our Q flat across counts | — |
+| G6 | P2 | Efficiency: pivot on exact values from the last result; avoid `get_relation`; no hard cap. | reference 9 calls vs our 12–15 | — |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every
