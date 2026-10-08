@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     )
     # H-37: drop telemetry records (cmdlet invocations, connections) from malicious artifacts.
     payload_no_telemetry: bool = Field(default=False, validation_alias="PAYLOAD_NO_TELEMETRY")
+    agent_benign_empty: bool = Field(default=False, validation_alias="AGENT_BENIGN_EMPTY")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
