@@ -24,6 +24,9 @@ INBOUND_TYPES = {
 }
 HOST_TYPES = {"host"}
 CHILD_TYPES = {"win_process_create", "parent_of", "wrote_file", "executed_file", "executed_script"}
+# Relation types that are network telemetry, not effects (soc-expert consultation 3, K1).
+NETWORK_TYPES = {"connected_to", "accepted_connection_from", "sent_data_to", "received_data_from"}
+EFFECT_TYPES = {"win_process_create", "wrote_file", "executed_script", "executed_file"}
 MAX_FAILED_CONCLUDES = 2
 
 
@@ -33,6 +36,9 @@ class TaskLog:
 
     alert_ids: set[str]
     alert_hosts: set[str]
+    host_terms: set[str] = field(default_factory=set)
+    entity_ips: dict[str, set[str]] = field(default_factory=dict)
+    more_pages: set[str] = field(default_factory=set)
     relations: dict[str, dict[str, Any]] = field(default_factory=dict)
     expanded: set[str] = field(default_factory=set)
     searched_queries: list[dict[str, Any]] = field(default_factory=list)
@@ -45,12 +51,24 @@ class TaskLog:
             alert_ids={e["id"] for e in entities if "id" in e},
             alert_hosts={e["id"] for e in entities if e.get("type") in HOST_TYPES},
         )
+        for e in entities:
+            if e.get("type") in HOST_TYPES:
+                props = e.get("properties") or {}
+                log.host_terms |= {e["id"]} | {
+                    str(props[k]) for k in ("hostname", "ip") if props.get(k)
+                }
         log.learn(alert)
         return log
 
     def record_call(self, tool: str, arguments: dict[str, Any], result: Any) -> None:
         if tool == "expand_entity":
-            self.expanded.add(arguments.get("entity_id", ""))
+            entity_id = arguments.get("entity_id", "")
+            self.expanded.add(entity_id)
+            page = result[0] if isinstance(result, list) and result else result
+            if isinstance(page, dict) and page.get("next_page_id"):
+                self.more_pages.add(entity_id)
+            else:
+                self.more_pages.discard(entity_id)
         elif tool == "search":
             self.searched_queries.append(arguments)
         elif tool == "get_entity":
@@ -73,57 +91,94 @@ class TaskLog:
                     }
                 if isinstance(item.get("id"), str) and isinstance(item.get("properties"), dict):
                     self.read_entities.add(item["id"])
+                    ips = {
+                        str(v)
+                        for k, v in item["properties"].items()
+                        if v and isinstance(v, str) and "ip" in k.lower()
+                    }
+                    if ips:
+                        self.entity_ips[item["id"]] = ips
                 stack.extend(v for v in item.values() if isinstance(v, dict | list))
 
 
 def unmet_checks(log: TaskLog, conclusion: dict[str, Any], flags: set[str]) -> list[str]:
-    """Return instructions for every enabled check a legitimate conclusion has not met."""
+    """Return instructions for every enabled check a legitimate conclusion has not met.
+
+    Flags from soc-expert consultation 3 (23 wrong-benign vs 127 correct-benign tasks):
+    K1 `host_window` — alerted process changed nothing but network → survey the host in the
+    alert window (caught 16/23, fired on 15/127); K2 `inbound_source` — inbound connections
+    whose source IP was never searched (7/23, 8/127); K3 `effects` — the alerted process'
+    effects not fully read (7/23, 16/127). Together 19/23 vs 29/127.
+    """
     if conclusion.get("hypothesis") != "legitimate":
         return []
     issues: list[str] = []
-    if "host_window" in flags and log.alert_hosts:
-        host_looked = bool(log.alert_hosts & log.expanded) or any(
-            q.get("query") in log.alert_hosts or q.get("time_window") for q in log.searched_queries
+    processes = log.alert_ids - log.alert_hosts
+    out_effects = [
+        r
+        for r in log.relations.values()
+        if r["source"] in processes and r["type"] not in NETWORK_TYPES | {"hosts", "runs_process"}
+    ]
+    if "host_window" in flags and log.host_terms and (not processes or not out_effects):
+        surveyed = any(
+            q.get("query") in log.host_terms
+            and q.get("time_window")
+            and (q.get("scope") or {}).get("kind") != "relation"
+            for q in log.searched_queries
         )
-        if not host_looked:
+        if not surveyed:
+            host = sorted(log.alert_hosts)[0] if log.alert_hosts else sorted(log.host_terms)[0]
             issues.append(
-                "You have not looked at what else happened on the alerted host around the alert "
-                "time. Search the host id with a tight time_window (or expand it with a relevant "
-                "relation_type) before concluding legitimate."
+                "The alerted process itself changed nothing, so the alert points at the host and "
+                "the time, not at this process. Before benign, call search with query = "
+                f"{host!r}, a time_window of about ±30 min around the alert, sort_order = "
+                "ascending; read 2 pages. Report any Office/browser/script → shell chain, "
+                "downloaded or executed files, archiving, service or network changes on this "
+                "host. Treat the same user's activity as related only if time and session match."
             )
-    if "inbound_sources" in flags:
+    if "inbound_source" in flags:
+        inbound_sources = {
+            r["source"] if r["target"] in log.alert_ids | log.alert_hosts else r["target"]
+            for r in log.relations.values()
+            if r["type"] == "accepted_connection_from"
+            and (
+                r["target"] in log.alert_ids | log.alert_hosts
+                or r["source"] in log.alert_ids | log.alert_hosts
+            )
+        }
+        source_ips = (
+            set().union(*(log.entity_ips.get(e, set()) for e in inbound_sources)) - log.host_terms
+        )
+        searched = {str(q.get("query")) for q in log.searched_queries}
+        if inbound_sources and not (source_ips & searched):
+            ips = ", ".join(sorted(source_ips)[:5]) or "the source IPs of those connections"
+            issues.append(
+                f"The alerted entity accepted inbound connections ({ips}). Identify the source: "
+                "search the source IP without scope, then with scope "
+                '{"kind": "relation", "type": "logged_on_to"} and a time_window around the alert. '
+                "Look at logon outcomes (success/failure, error codes, accounts). A regular "
+                "interval is not proof of monitoring: repeated failures from one source mean "
+                "password guessing."
+            )
+    if "effects" in flags and processes:
+        unexpanded = processes - log.expanded
         unread = sorted(
             {
-                rel["source"]
-                for rel in log.relations.values()
-                if rel["type"] in INBOUND_TYPES
-                and rel["target"] in log.alert_ids | log.alert_hosts
-                and rel["source"] not in log.read_entities
+                r["target"]
+                for r in log.relations.values()
+                if r["source"] in processes
+                and r["type"] in EFFECT_TYPES
+                and r["target"] not in log.read_entities
             }
         )
-        if unread:
+        paged = processes & log.more_pages
+        if unexpanded or unread or paged:
+            listed = ", ".join(unread[:8]) or ", ".join(sorted(unexpanded | paged))
             issues.append(
-                "Inbound activity reached the alerted entity from sources you have not examined: "
-                + ", ".join(unread[:5])
-                + ". Read or expand them (who is on the other end; repeated or periodic attempts?) "
-                "before concluding legitimate."
+                f"You have not read all effects of the alerted process ({listed}). Read them "
+                "(for more than 10 relations, search the process id with a relation-type "
+                "scope). For every written or changed file decide: attacker tool, modified "
+                "business data, or a normal work artefact? Benign only if every effect is "
+                "explained."
             )
-    if "children" in flags:
-        alerted_processes = log.alert_ids - log.alert_hosts
-        if alerted_processes and not (alerted_processes & log.expanded):
-            issues.append(
-                "You have not expanded the alerted process itself (its children, written and "
-                "executed files). Do that before concluding legitimate."
-            )
-    if "actor_mechanism" in flags:
-        for key, role in (
-            ("legit_actor_id", "legitimate actor"),
-            ("launch_mechanism_id", "launch mechanism"),
-        ):
-            entity_id = conclusion.get(key)
-            if not entity_id or entity_id not in log.read_entities:
-                issues.append(
-                    f"Name the {role} with an entity id you have actually observed "
-                    f"(`{key}`), or investigate until you can."
-                )
     return issues
