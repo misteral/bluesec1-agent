@@ -403,7 +403,46 @@ def extract_raw_content(response: Any) -> str:
     refusal = getattr(message, "refusal", None)
     if refusal:
         raise ValueError(f"Model refused structured output: {refusal}")
-    return extract_message_text(message)
+    text = extract_message_text(message)
+    if not text.strip():
+        recovered = step_from_tool_calls(message)
+        if recovered:
+            return recovered
+        logger.debug(
+            "Empty content; finish_reason={} tool_calls={} reasoning={}",
+            getattr(choices[0], "finish_reason", None),
+            bool(getattr(message, "tool_calls", None)),
+            bool(getattr(message, "reasoning", None)),
+        )
+    return text
+
+
+def step_from_tool_calls(message: Any) -> str:
+    """Rebuild a NextStep JSON from a native tool call when the content is empty.
+
+    Our history records each step as an assistant `tool_calls` entry; Claude (exp-043) often
+    answers with a native tool call instead of the JSON text, which arrived as empty content.
+    """
+    calls = getattr(message, "tool_calls", None) or []
+    if not calls:
+        return ""
+    function = getattr(calls[0], "function", None)
+    name = getattr(function, "name", None)
+    try:
+        arguments = json.loads(getattr(function, "arguments", None) or "{}")
+    except json.JSONDecodeError:
+        return ""
+    if not name or not isinstance(arguments, dict):
+        return ""
+    arguments.pop("tool", None)
+    return json.dumps(
+        {
+            "current_state": str(arguments.get("reasoning") or "Continuing the investigation."),
+            "plan_remaining_steps_brief": [f"Call {name}."],
+            "task_completed": name == "finish_investigation",
+            "function": {"tool": name, **arguments},
+        }
+    )
 
 
 def extract_json_object(raw_content: str) -> str:

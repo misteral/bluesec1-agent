@@ -277,3 +277,25 @@ def test_create_retries_responses_without_choices(monkeypatch: pytest.MonkeyPatc
 
     assert step.function.tool == "get_entity"
     assert calls["n"] == 2
+
+
+def test_empty_content_with_native_tool_call_is_recovered() -> None:
+    """Claude may answer with a native tool call; it becomes a valid NextStep."""
+    import json as _json
+
+    from bluesec1_agent.llm import parse_next_step_payload, step_from_tool_calls
+
+    message = SimpleNamespace(
+        content=None,
+        tool_calls=[
+            SimpleNamespace(
+                function=SimpleNamespace(
+                    name="get_entity",
+                    arguments=_json.dumps({"entity_id": "e1", "reasoning": "look"}),
+                )
+            )
+        ],
+    )
+    step = parse_next_step_payload(step_from_tool_calls(message))
+    assert step.function.tool == "get_entity"
+    assert step.task_completed is False
