@@ -76,6 +76,7 @@ async def run(args: argparse.Namespace) -> None:
         reasoning_effort=settings.llm_reasoning_effort,
         provider_only=[p.strip() for p in settings.llm_provider_only.split(",") if p.strip()]
         or None,
+        plain_history=settings.llm_plain_history,
         allow_conclude=bool(settings.agent_conclude_flags),
     )
     review_llm = None
@@ -135,6 +136,7 @@ async def run(args: argparse.Namespace) -> None:
                 "response_format": settings.llm_response_format,
                 "reasoning_effort": settings.llm_reasoning_effort,
                 "provider_only": settings.llm_provider_only,
+                "plain_history": settings.llm_plain_history,
                 "max_steps": settings.agent_max_steps,
                 "max_completion_tokens": settings.llm_max_completion_tokens,
                 "agent_prompt": settings.agent_prompt,

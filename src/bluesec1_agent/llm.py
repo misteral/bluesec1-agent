@@ -52,6 +52,44 @@ RATE_LIMIT_DEFAULT_WAIT_SECONDS = 30.0
 RATE_LIMIT_MAX_WAIT_SECONDS = 75.0
 
 
+def plain_text_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rewrite assistant tool_calls and tool results as plain assistant/user text turns."""
+    rewritten: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "assistant" and message.get("tool_calls"):
+            call = message["tool_calls"][0]["function"]
+            try:
+                arguments = json.loads(call.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            state = message.get("content") or ""
+            rewritten.append(
+                {
+                    "role": "assistant",
+                    "content": f"{state}\nCalled {call.get('name')} with "
+                    + json.dumps(arguments, ensure_ascii=False),
+                }
+            )
+        elif role == "tool":
+            rewritten.append(
+                {"role": "user", "content": "Tool result:\n" + str(message.get("content"))}
+            )
+        else:
+            rewritten.append(dict(message))
+    # Merge consecutive same-role turns (Anthropic requires alternation).
+    merged: list[dict[str, Any]] = []
+    for message in rewritten:
+        if merged and merged[-1]["role"] == message["role"] and message["role"] != "system":
+            merged[-1] = {
+                **merged[-1],
+                "content": f"{merged[-1]['content']}\n\n{message['content']}",
+            }
+        else:
+            merged.append(message)
+    return merged
+
+
 def usage_cost(usage: Any) -> float:
     """Provider spend for one response: OpenRouter `cost`, plus the upstream cost for BYOK.
 
@@ -123,6 +161,7 @@ class OpenAIStructuredStepClient:
         response_format: ResponseFormatMode = "json_schema",
         reasoning_effort: str | None = None,
         provider_only: list[str] | None = None,
+        plain_history: bool = False,
         allow_conclude: bool = False,
         client: AsyncOpenAI | None = None,
     ) -> None:
@@ -149,6 +188,9 @@ class OpenAIStructuredStepClient:
         # Pin OpenRouter to these providers with no fallback (BYOK must not silently fall back
         # to providers billed on OpenRouter credits).
         self.provider_only = provider_only
+        # Send tool turns as plain text (Anthropic via OpenRouter returned empty content when the
+        # history held tool_calls/tool messages without declared tools — exp-043).
+        self.plain_history = plain_history
         # H-44: a separate step schema that also offers the agent-side `conclude` tool.
         self.allow_conclude = allow_conclude
         self.last_step_stats: dict[str, Any] = {}
@@ -282,7 +324,7 @@ class OpenAIStructuredStepClient:
         Raises:
             NextStepRequestError: If every provider reply violates the schema.
         """
-        request_messages = list(messages)
+        request_messages = plain_text_history(messages) if self.plain_history else list(messages)
         if request_messages and request_messages[0].get("role") == "system":
             first_message = dict(request_messages[0])
             first_message["content"] = f"{first_message.get('content', '')}\n\n{self._instruction}"
