@@ -299,3 +299,16 @@ def test_empty_content_with_native_tool_call_is_recovered() -> None:
     step = parse_next_step_payload(step_from_tool_calls(message))
     assert step.function.tool == "get_entity"
     assert step.task_completed is False
+
+
+def test_claude_invoke_xml_is_recovered() -> None:
+    """Claude's native <invoke> text becomes a valid NextStep; null params are dropped."""
+    from bluesec1_agent.llm import parse_next_step_payload, step_from_invoke_xml
+
+    raw = (
+        '<invoke name="get_entity">\n<parameter name="entity_id">e1</parameter>\n'
+        '<parameter name="reasoning">look</parameter>\n</invoke>'
+    )
+    step = parse_next_step_payload(step_from_invoke_xml(raw))
+    assert step.function.tool == "get_entity"
+    assert step.function.entity_id == "e1"

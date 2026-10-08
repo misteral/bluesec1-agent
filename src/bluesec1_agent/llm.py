@@ -52,6 +52,36 @@ RATE_LIMIT_DEFAULT_WAIT_SECONDS = 30.0
 RATE_LIMIT_MAX_WAIT_SECONDS = 75.0
 
 
+INVOKE_RE = re.compile(r'<invoke name="([^"]+)">(.*?)</invoke>', re.DOTALL)
+PARAM_RE = re.compile(r'<parameter name="([^"]+)">(.*?)</parameter>', re.DOTALL)
+
+
+def step_from_invoke_xml(raw: str) -> str:
+    """Rebuild a NextStep JSON from Claude's native `<invoke>` tool-call text (exp-043)."""
+    match = INVOKE_RE.search(raw or "")
+    if not match:
+        return ""
+    name, body = match.group(1), match.group(2)
+    arguments: dict[str, Any] = {}
+    for key, value in PARAM_RE.findall(body):
+        value = value.strip()
+        if value in ("null", "None", ""):
+            continue
+        try:
+            arguments[key] = json.loads(value)
+        except json.JSONDecodeError:
+            arguments[key] = value
+    arguments.pop("tool", None)
+    return json.dumps(
+        {
+            "current_state": str(arguments.get("reasoning") or "Continuing the investigation."),
+            "plan_remaining_steps_brief": [f"Call {name}."],
+            "task_completed": name == "finish_investigation",
+            "function": {"tool": name, **arguments},
+        }
+    )
+
+
 def plain_text_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rewrite assistant tool_calls and tool results as plain assistant/user text turns."""
     rewritten: list[dict[str, Any]] = []
@@ -369,6 +399,8 @@ class OpenAIStructuredStepClient:
             stats["cost_usd"] += usage_cost(usage)
 
             try:
+                if "<invoke" in raw_content and "{" not in raw_content.split("<invoke", 1)[0]:
+                    raw_content = step_from_invoke_xml(raw_content) or raw_content
                 step = parse_next_step_payload(
                     raw_content, NextStepConclude if self.allow_conclude else NextStep
                 )
