@@ -105,6 +105,7 @@ class OpenAIStructuredStepClient:
         max_retries: int,
         response_format: ResponseFormatMode = "json_schema",
         reasoning_effort: str | None = None,
+        provider_only: list[str] | None = None,
         allow_conclude: bool = False,
         client: AsyncOpenAI | None = None,
     ) -> None:
@@ -128,6 +129,9 @@ class OpenAIStructuredStepClient:
         self.response_format = response_format
         # OpenRouter unified reasoning control (low/medium/high); None = provider default.
         self.reasoning_effort = reasoning_effort
+        # Pin OpenRouter to these providers with no fallback (BYOK must not silently fall back
+        # to providers billed on OpenRouter credits).
+        self.provider_only = provider_only
         # H-44: a separate step schema that also offers the agent-side `conclude` tool.
         self.allow_conclude = allow_conclude
         self.last_step_stats: dict[str, Any] = {}
@@ -136,9 +140,17 @@ class OpenAIStructuredStepClient:
             CONCLUDE_STEP_RESPONSE_FORMAT if allow_conclude else NEXT_STEP_RESPONSE_FORMAT
         )
         if response_format == "json_object":
-            self._instruction = (
-                f"{STRUCTURED_OUTPUT_INSTRUCTION}\n\n{JSON_OBJECT_SCHEMA_INSTRUCTION}"
+            # Anthropic rejects our strict schema ("compiled grammar is too large"); in JSON mode
+            # the schema travels as text — the conclude variant when that step is enabled.
+            schema_text = (
+                "The reply must validate against this JSON schema:\n"
+                + json.dumps(
+                    CONCLUDE_STEP_RESPONSE_FORMAT["json_schema"]["schema"], separators=(",", ":")
+                )
+                if allow_conclude
+                else JSON_OBJECT_SCHEMA_INSTRUCTION
             )
+            self._instruction = f"{STRUCTURED_OUTPUT_INSTRUCTION}\n\n{schema_text}"
             self._response_format = {"type": "json_object"}
         self._owns_client = client is None
         self._client = client or AsyncOpenAI(
@@ -175,10 +187,13 @@ class OpenAIStructuredStepClient:
         """
         for wait_index in range(RATE_LIMIT_MAX_WAITS + 1):
             try:
+                extra_body: dict[str, Any] = dict(kwargs.pop("extra_body", None) or {})
                 if self.reasoning_effort:
-                    kwargs.setdefault(
-                        "extra_body", {"reasoning": {"effort": self.reasoning_effort}}
-                    )
+                    extra_body["reasoning"] = {"effort": self.reasoning_effort}
+                if self.provider_only:
+                    extra_body["provider"] = {"only": self.provider_only, "allow_fallbacks": False}
+                if extra_body:
+                    kwargs["extra_body"] = extra_body
                 response = await self._client.chat.completions.create(model=self.model, **kwargs)
             except RateLimitError as error:
                 if wait_index == RATE_LIMIT_MAX_WAITS:

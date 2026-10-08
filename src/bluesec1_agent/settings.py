@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     llm_reasoning_effort: Literal["low", "medium", "high"] | None = Field(
         default=None, validation_alias="LLM_REASONING_EFFORT"
     )
+    # Comma-separated OpenRouter providers to pin (no fallback), e.g. "anthropic" for BYOK.
+    llm_provider_only: str = Field(default="", validation_alias="LLM_PROVIDER_ONLY")
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",
