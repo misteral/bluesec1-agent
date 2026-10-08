@@ -463,3 +463,24 @@ def test_benign_host_check_asks_once_then_accepts() -> None:
 
     assert [name for name, _ in session.calls] == ["get_entity", "finish_investigation"]
     assert "Before closing as benign" in llm.requests[2][-1]["content"]
+
+
+def test_platform_retry_survives_a_short_outage(monkeypatch: Any) -> None:
+    """H-28: a briefly unavailable runtime is retried instead of failing the task."""
+    import bluesec1_agent.agent as agent_module
+    from bluesec1_client import RemoteUnavailableError
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(agent_module.asyncio, "sleep", no_sleep)
+    attempts = {"n": 0}
+
+    async def flaky() -> str:
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise RemoteUnavailableError("The remote runtime is temporarily unavailable.")
+        return "ok"
+
+    assert asyncio.run(agent_module.with_platform_retry(flaky)) == "ok"
+    assert attempts["n"] == 3

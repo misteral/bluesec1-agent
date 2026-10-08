@@ -23,6 +23,7 @@ from bluesec1_agent.tracking import RunRecorder, scenario_fingerprint
 from bluesec1_client import (
     RemoteBenchmarkClient,
     RemoteBenchmarkSession,
+    RemoteUnavailableError,
     TaskResult,
     ToolCallResult,
 )
@@ -182,6 +183,23 @@ FORCE_FINISH_MESSAGE = (
 )
 
 
+# H-28: exp-029/030 lost their last tasks when the runtime was briefly unavailable (17:25).
+PLATFORM_RETRY_WAITS = (10, 20, 30, 60, 90, 120, 120)  # ≈7.5 min, under the 15-min idle close
+
+
+async def with_platform_retry(call: Any, *args: Any, **kwargs: Any) -> Any:
+    """Await a runtime call, retrying through short `RemoteUnavailableError` outages."""
+    for wait in (*PLATFORM_RETRY_WAITS, None):
+        try:
+            return await call(*args, **kwargs)
+        except RemoteUnavailableError as error:
+            if wait is None:
+                raise
+            logger.warning("Runtime unavailable ({}); retrying in {} s.", error, wait)
+            await asyncio.sleep(wait)
+    raise AssertionError("unreachable")
+
+
 class ConsecutiveTaskFailuresError(RuntimeError):
     """Raised to stop a run before a systemic agent failure drains the task queue."""
 
@@ -293,7 +311,7 @@ class SimpleSGRAgent:
             self.recorder.set_run_id(remote_run.run_id)
         task_results: list[TaskResult] = []
         consecutive_failures = 0
-        while (session := await client.start_task()) is not None:
+        while (session := await with_platform_retry(client.start_task)) is not None:
             logger.info("Starting structured investigation for task {}.", session.task_id)
             self._task_stats = self._new_task_stats(session.task.observation)
             try:
@@ -600,7 +618,9 @@ class SimpleSGRAgent:
                 platform_calls += 1
                 last_platform_request = time.monotonic()
                 platform_tool, platform_arguments = self._platform_call(tool_name, arguments)
-                response = await session.call_tool(platform_tool, platform_arguments)
+                response = await with_platform_retry(
+                    session.call_tool, platform_tool, platform_arguments
+                )
                 feedback = self._tool_feedback(response)
                 if tool_name == "expand_entity":
                     feedback = self._neighbourhood(arguments["entity_id"], feedback)

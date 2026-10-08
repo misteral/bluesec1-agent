@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
-from bluesec1_agent.agent import STRATEGY_SYSTEM_PROMPT, SimpleSGRAgent
+from bluesec1_agent.agent import STRATEGY_SYSTEM_PROMPT, SimpleSGRAgent, with_platform_retry
 from bluesec1_agent.guard import parse_jsonish
 from bluesec1_agent.jev_client import JevClient
 from bluesec1_agent.llm import StructuredStepClient, render_json
@@ -186,7 +186,9 @@ class JevNavigatorAgent(SimpleSGRAgent):
             action = candidates[int(choice[1:])][0]
             tool, arguments = action
             platform_tool, platform_arguments = self._platform_call(tool, arguments)
-            response = await session.call_tool(platform_tool, platform_arguments)
+            response = await with_platform_retry(
+                session.call_tool, platform_tool, platform_arguments
+            )
             calls += 1
             feedback = self._tool_feedback(response)
             if tool == "expand_entity":
