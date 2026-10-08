@@ -352,6 +352,14 @@ class SimpleSGRAgent:
         # H-44: SGR conclude step with code-verified checks (empty/None = disabled).
         self.conclude_flags = set(conclude_flags or ())
         self.keep_c2 = keep_c2
+        if keep_c2:
+            # G1 needs the prompt to allow drafting the channel row at all (exp-038: the rule
+            # alone never fired — network_block stayed at 6% of malicious answers).
+            self.system_prompt = self.system_prompt.replace(
+                "Network connections are not artifacts.",
+                "Internal network connection records are not artifacts; the attacker's outbound "
+                "connection to a public address is reported as network_block on that connection.",
+            )
         self.rotate_identity = rotate_identity
         if hash_pivot:
             self.system_prompt = f"{self.system_prompt}\n\n{HASH_PIVOT_ADDON}"
