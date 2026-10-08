@@ -52,6 +52,23 @@ RATE_LIMIT_DEFAULT_WAIT_SECONDS = 30.0
 RATE_LIMIT_MAX_WAIT_SECONDS = 75.0
 
 
+def usage_cost(usage: Any) -> float:
+    """Provider spend for one response: OpenRouter `cost`, plus the upstream cost for BYOK.
+
+    With a bring-your-own key OpenRouter reports `cost` 0 and the real model price in
+    `cost_details.upstream_inference_cost`; budget caps must see that.
+    """
+    if usage is None:
+        return 0.0
+    cost = float(getattr(usage, "cost", 0.0) or 0.0)
+    details = getattr(usage, "cost_details", None)
+    if isinstance(details, dict):
+        upstream = details.get("upstream_inference_cost")
+    else:
+        upstream = getattr(details, "upstream_inference_cost", None)
+    return cost + float(upstream or 0.0)
+
+
 def rate_limit_wait_seconds(error: RateLimitError, now_ms: float | None = None) -> float:
     """Return how long to wait before retrying, from the provider's reset header if present.
 
@@ -301,7 +318,7 @@ class OpenAIStructuredStepClient:
             stats["prompt_tokens"] += int(getattr(usage, "prompt_tokens", 0) or 0)
             stats["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
             stats["total_tokens"] += total_tokens
-            stats["cost_usd"] += float(getattr(usage, "cost", 0.0) or 0.0)
+            stats["cost_usd"] += usage_cost(usage)
 
             try:
                 step = parse_next_step_payload(
