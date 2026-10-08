@@ -44,7 +44,7 @@ JSON_OBJECT_SCHEMA_INSTRUCTION = "The reply must validate against this JSON sche
     NEXT_STEP_RESPONSE_FORMAT["json_schema"]["schema"], separators=(",", ":")
 )
 
-ResponseFormatMode = Literal["json_schema", "json_object"]
+ResponseFormatMode = Literal["json_schema", "json_object", "none"]
 
 # Free-tier limits are per minute; the SDK's sub-second backoff cannot outlast the window.
 RATE_LIMIT_MAX_WAITS = 8
@@ -156,7 +156,7 @@ class OpenAIStructuredStepClient:
         self._response_format: dict[str, Any] = (
             CONCLUDE_STEP_RESPONSE_FORMAT if allow_conclude else NEXT_STEP_RESPONSE_FORMAT
         )
-        if response_format == "json_object":
+        if response_format in ("json_object", "none"):
             # Anthropic rejects our strict schema ("compiled grammar is too large"); in JSON mode
             # the schema travels as text — the conclude variant when that step is enabled.
             schema_text = (
@@ -168,7 +168,11 @@ class OpenAIStructuredStepClient:
                 else JSON_OBJECT_SCHEMA_INSTRUCTION
             )
             self._instruction = f"{STRUCTURED_OUTPUT_INSTRUCTION}\n\n{schema_text}"
-            self._response_format = {"type": "json_object"}
+            # "none": no response_format at all — exp-043: OpenRouter's json_object mode for
+            # Anthropic with mandatory reasoning returned empty content on ~45% of calls.
+            self._response_format = (
+                {"type": "json_object"} if response_format == "json_object" else {}
+            )
         self._owns_client = client is None
         self._client = client or AsyncOpenAI(
             base_url=base_url,
@@ -211,6 +215,8 @@ class OpenAIStructuredStepClient:
                     extra_body["provider"] = {"only": self.provider_only, "allow_fallbacks": False}
                 if extra_body:
                     kwargs["extra_body"] = extra_body
+                if not kwargs.get("response_format"):
+                    kwargs.pop("response_format", None)
                 response = await self._client.chat.completions.create(model=self.model, **kwargs)
             except RateLimitError as error:
                 if wait_index == RATE_LIMIT_MAX_WAITS:

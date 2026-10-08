@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     )
     # Comma-separated OpenRouter providers to pin (no fallback), e.g. "anthropic" for BYOK.
     llm_provider_only: str = Field(default="", validation_alias="LLM_PROVIDER_ONLY")
-    llm_response_format: Literal["json_schema", "json_object"] = Field(
+    llm_response_format: Literal["json_schema", "json_object", "none"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",
     )
