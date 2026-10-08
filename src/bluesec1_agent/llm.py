@@ -102,6 +102,7 @@ class OpenAIStructuredStepClient:
         max_completion_tokens: int,
         max_retries: int,
         response_format: ResponseFormatMode = "json_schema",
+        reasoning_effort: str | None = None,
         client: AsyncOpenAI | None = None,
     ) -> None:
         """Initialize an OpenAI-compatible structured step generator.
@@ -122,6 +123,8 @@ class OpenAIStructuredStepClient:
         self.max_completion_tokens = max_completion_tokens
         self.max_retries = max_retries
         self.response_format = response_format
+        # OpenRouter unified reasoning control (low/medium/high); None = provider default.
+        self.reasoning_effort = reasoning_effort
         self.last_step_stats: dict[str, Any] = {}
         self._instruction = STRUCTURED_OUTPUT_INSTRUCTION
         self._response_format: dict[str, Any] = NEXT_STEP_RESPONSE_FORMAT
@@ -165,6 +168,10 @@ class OpenAIStructuredStepClient:
         """
         for wait_index in range(RATE_LIMIT_MAX_WAITS + 1):
             try:
+                if self.reasoning_effort:
+                    kwargs.setdefault(
+                        "extra_body", {"reasoning": {"effort": self.reasoning_effort}}
+                    )
                 response = await self._client.chat.completions.create(model=self.model, **kwargs)
             except RateLimitError as error:
                 if wait_index == RATE_LIMIT_MAX_WAITS:

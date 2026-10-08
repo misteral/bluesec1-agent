@@ -119,6 +119,9 @@ class Settings(BaseSettings):
     llm_run_budget_usd: float | None = Field(
         default=None, validation_alias="LLM_RUN_BUDGET_USD", gt=0
     )
+    llm_reasoning_effort: Literal["low", "medium", "high"] | None = Field(
+        default=None, validation_alias="LLM_REASONING_EFFORT"
+    )
     llm_response_format: Literal["json_schema", "json_object"] = Field(
         default="json_schema",
         validation_alias="LLM_RESPONSE_FORMAT",

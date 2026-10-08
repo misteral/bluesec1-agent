@@ -73,6 +73,7 @@ async def run(args: argparse.Namespace) -> None:
         max_completion_tokens=settings.llm_max_completion_tokens,
         max_retries=settings.llm_max_step_retries,
         response_format=settings.llm_response_format,
+        reasoning_effort=settings.llm_reasoning_effort,
     )
     review_llm = None
     if settings.llm_review_model:
@@ -129,6 +130,7 @@ async def run(args: argparse.Namespace) -> None:
                 "arena": arena,
                 "model": settings.llm_default_model,
                 "response_format": settings.llm_response_format,
+                "reasoning_effort": settings.llm_reasoning_effort,
                 "max_steps": settings.agent_max_steps,
                 "max_completion_tokens": settings.llm_max_completion_tokens,
                 "agent_prompt": settings.agent_prompt,
