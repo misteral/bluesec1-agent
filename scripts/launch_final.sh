@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Frozen final configuration (exp-029, platform-score estimate 16.08 at 29/30 on 2026-10-08):
+# Frozen final configuration v2 (exp-036: score~ 16.55 at 30/30, 0 wrong verdicts, 2026-10-09):
 # mimo LLM agent + expand_entity + finish review (precision checklist) + payload policy
-# (benign cap, no tier rows, no telemetry rows) + empty benign evidence + retry/idle guards.
+# (benign cap, no tier rows, no telemetry rows) + empty benign evidence + retry/idle guards
+# + SGR conclude step with code-verified checks K1–K3 (H-44).
 # Usage: scripts/launch_final.sh exp-NNN-name   (credit day: run several in parallel, keep the best)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,6 +18,7 @@ for attempt in 1 2 3; do
   AGENT_PAYLOAD_TIERS=false \
   PAYLOAD_NO_TELEMETRY=true \
   AGENT_BENIGN_EMPTY=true \
+  AGENT_CONCLUDE_FLAGS=host_window,inbound_source,effects \
   LLM_RUN_BUDGET_USD=1.0
   sleep 90
   log=$(ls -t runs/"$1"-*.log | head -1)
