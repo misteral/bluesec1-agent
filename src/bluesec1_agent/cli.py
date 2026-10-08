@@ -150,6 +150,7 @@ async def run(args: argparse.Namespace) -> None:
                 "conclude_flags": settings.agent_conclude_flags,
                 "payload_keep_c2": settings.payload_keep_c2,
                 "rotate_identity": settings.agent_rotate_identity,
+                "hash_pivot": settings.agent_hash_pivot,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -217,6 +218,7 @@ async def run(args: argparse.Namespace) -> None:
                 verdict_bar=settings.agent_verdict_bar,
                 keep_c2=settings.payload_keep_c2,
                 rotate_identity=settings.agent_rotate_identity,
+                hash_pivot=settings.agent_hash_pivot,
                 conclude_flags={
                     f.strip() for f in settings.agent_conclude_flags.split(",") if f.strip()
                 },

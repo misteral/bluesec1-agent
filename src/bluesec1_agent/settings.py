@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     agent_conclude_flags: str = Field(default="", validation_alias="AGENT_CONCLUDE_FLAGS")
     payload_keep_c2: bool = Field(default=False, validation_alias="PAYLOAD_KEEP_C2")
     agent_rotate_identity: bool = Field(default=False, validation_alias="AGENT_ROTATE_IDENTITY")
+    agent_hash_pivot: bool = Field(default=False, validation_alias="AGENT_HASH_PIVOT")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
