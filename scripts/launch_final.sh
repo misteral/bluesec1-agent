@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Frozen final configuration v2 (exp-036: score~ 16.55 at 30/30, 0 wrong verdicts, 2026-10-09):
+# Frozen final configuration v3 (v2 + G2; exp-039: score~ 17.45 at 30/30, 0 wrong verdicts, 2026-10-09):
 # mimo LLM agent + expand_entity + finish review (precision checklist) + payload policy
 # (benign cap, no tier rows, no telemetry rows) + empty benign evidence + retry/idle guards
-# + SGR conclude step with code-verified checks K1–K3 (H-44).
+# + SGR conclude step with code-verified checks K1–K3 (H-44)
+# + review requires identity_to_rotate for the account running attacker code (G2).
 # Usage: scripts/launch_final.sh exp-NNN-name   (credit day: run several in parallel, keep the best)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,6 +20,7 @@ for attempt in 1 2 3; do
   PAYLOAD_NO_TELEMETRY=true \
   AGENT_BENIGN_EMPTY=true \
   AGENT_CONCLUDE_FLAGS=host_window,inbound_source,effects \
+  AGENT_ROTATE_IDENTITY=true \
   LLM_RUN_BUDGET_USD=1.0
   sleep 90
   log=$(ls -t runs/"$1"-*.log | head -1)
