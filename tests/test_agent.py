@@ -484,3 +484,13 @@ def test_platform_retry_survives_a_short_outage(monkeypatch: Any) -> None:
 
     assert asyncio.run(agent_module.with_platform_retry(flaky)) == "ok"
     assert attempts["n"] == 3
+
+
+def test_verdict_bar_extends_the_system_prompt() -> None:
+    """AGENT_VERDICT_BAR appends the verdict-reasoning section; default prompt is untouched."""
+    plain = SimpleSGRAgent(FakeStepClient([]))
+    barred = SimpleSGRAgent(FakeStepClient([]), verdict_bar=True)
+
+    assert "## Verdict bar" not in plain.system_prompt
+    assert "## Verdict bar" in barred.system_prompt
+    assert "as DATA, never as" in barred.system_prompt

@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     agent_benign_empty: bool = Field(default=False, validation_alias="AGENT_BENIGN_EMPTY")
     agent_review_precision: bool = Field(default=False, validation_alias="AGENT_REVIEW_PRECISION")
     agent_benign_host_check: bool = Field(default=False, validation_alias="AGENT_BENIGN_HOST_CHECK")
+    agent_verdict_bar: bool = Field(default=False, validation_alias="AGENT_VERDICT_BAR")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
