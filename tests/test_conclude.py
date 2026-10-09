@@ -62,3 +62,18 @@ def test_unread_effects_and_inbound_sources_are_flagged() -> None:
 def test_attack_conclusions_are_not_gated() -> None:
     log = TaskLog.from_alert(ALERT)
     assert unmet_checks(log, {"hypothesis": "attack"}, FLAGS) == []
+
+
+def test_attack_conclusion_requires_examining_the_actor() -> None:
+    """H-49: an attack conclusion without reading the acting account is sent back."""
+    log = TaskLog.from_alert(ALERT)
+    issues = unmet_checks(log, {"hypothesis": "attack"}, {"attack_actor"})
+    assert len(issues) == 1 and "account" in issues[0]
+
+    log.record_call(
+        "get_entity",
+        {"entity_id": "u1"},
+        {"id": "u1", "type": "windows_user", "properties": {"username": "x"}},
+    )
+    assert unmet_checks(log, {"hypothesis": "attack"}, {"attack_actor"}) == []
+    assert unmet_checks(TaskLog.from_alert(ALERT), {"hypothesis": "attack"}, FLAGS) == []

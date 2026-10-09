@@ -39,6 +39,8 @@ class TaskLog:
     host_terms: set[str] = field(default_factory=set)
     entity_ips: dict[str, set[str]] = field(default_factory=dict)
     more_pages: set[str] = field(default_factory=set)
+    types: dict[str, str] = field(default_factory=dict)
+    ad_lookups: int = 0
     relations: dict[str, dict[str, Any]] = field(default_factory=dict)
     expanded: set[str] = field(default_factory=set)
     searched_queries: list[dict[str, Any]] = field(default_factory=list)
@@ -73,6 +75,8 @@ class TaskLog:
             self.searched_queries.append(arguments)
         elif tool == "get_entity":
             self.read_entities.add(arguments.get("entity_id", ""))
+        elif tool == "get_ad_object_info":
+            self.ad_lookups += 1
         self.learn(result)
 
     def learn(self, value: Any) -> None:
@@ -91,6 +95,8 @@ class TaskLog:
                     }
                 if isinstance(item.get("id"), str) and isinstance(item.get("properties"), dict):
                     self.read_entities.add(item["id"])
+                    if isinstance(item.get("type"), str):
+                        self.types[item["id"]] = item["type"]
                     ips = {
                         str(v)
                         for k, v in item["properties"].items()
@@ -110,6 +116,8 @@ def unmet_checks(log: TaskLog, conclusion: dict[str, Any], flags: set[str]) -> l
     whose source IP was never searched (7/23, 8/127); K3 `effects` — the alerted process'
     effects not fully read (7/23, 16/127). Together 19/23 vs 29/127.
     """
+    if conclusion.get("hypothesis") == "attack":
+        return attack_checks(log, flags)
     if conclusion.get("hypothesis") != "legitimate":
         return []
     issues: list[str] = []
@@ -180,5 +188,29 @@ def unmet_checks(log: TaskLog, conclusion: dict[str, Any], flags: set[str]) -> l
                 "scope). For every written or changed file decide: attacker tool, modified "
                 "business data, or a normal work artefact? Benign only if every effect is "
                 "explained."
+            )
+    return issues
+
+
+ACCOUNT_TYPES = {"windows_user", "linux_user", "ad_object"}
+
+
+def attack_checks(log: TaskLog, flags: set[str]) -> list[str]:
+    """Checks for an attack conclusion (H-49, Claude profile).
+
+    Claude models flagged powerful but authorised admin activity as attacks (exp-043/050 false
+    positives: directory admin consoles, management-agent tasks, installers, IR collection
+    tools) without checking who acted. `attack_actor`: before concluding attack, the acting
+    account must have been examined (account entity or its directory object).
+    """
+    issues: list[str] = []
+    if "attack_actor" in flags:
+        account_read = any(t in ACCOUNT_TYPES for t in log.types.values()) or log.ad_lookups > 0
+        if not account_read:
+            issues.append(
+                "Before concluding attack, examine the account that performed the activity: read "
+                "its user entity or directory object (groups, description, role). Powerful admin "
+                "actions by the expected admin or service account through the expected tooling "
+                "are authorised activity, not an attack."
             )
     return issues

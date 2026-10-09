@@ -181,6 +181,19 @@ If the alerted process carries a hash (sha256/sha1/md5) or an image path, spend 
 signed, who wrote it and when. Note that a null signature field means unknown, not unsigned.
 """.strip()
 
+# H-49: Claude models leaned malicious on authorised admin activity (exp-043: 5 FP, exp-050:
+# 4 FP — directory admin consoles, management-agent tasks, installers, IR collection tools).
+CLAUDE_CALIBRATION_ADDON = """
+## Authorised administration is benign
+Powerful actions — group membership or permission changes, service or scheduled-task creation
+by management agents or installers, credential or memory collection by incident-response tools,
+remote administration — are BENIGN when performed by the expected administrative or service
+account, through the expected tooling or management channel, consistent with its role. Do not
+call capability an attack. Conclude attack only with evidence of attacker intent: an unexpected
+or compromised actor, credential theft, an unknown source, command-and-control, evasion or
+destruction. Check who acted (account, groups, description, logon source) before deciding.
+""".strip()
+
 CONCLUDE_SPEC: dict[str, Any] = {
     "name": "conclude",
     "description": (
@@ -305,6 +318,7 @@ class SimpleSGRAgent:
         host_scope: bool = False,
         benign_max_citations: int = 3,
         complete_payload: bool = False,
+        claude_profile: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -372,6 +386,10 @@ class SimpleSGRAgent:
         self.host_scope = host_scope
         self.benign_max_citations = benign_max_citations
         self.complete_payload = complete_payload
+        if claude_profile:
+            self.system_prompt = f"{self.system_prompt}\n\n{CLAUDE_CALIBRATION_ADDON}"
+            if self.conclude_flags:
+                self.conclude_flags.add("attack_actor")
         if hash_pivot:
             self.system_prompt = f"{self.system_prompt}\n\n{HASH_PIVOT_ADDON}"
         if self.conclude_flags:

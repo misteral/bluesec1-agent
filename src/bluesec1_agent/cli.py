@@ -160,6 +160,7 @@ async def run(args: argparse.Namespace) -> None:
                 "host_scope": settings.agent_host_scope,
                 "benign_max_citations": settings.agent_benign_max_citations,
                 "complete_payload": settings.agent_complete_payload,
+                "claude_profile": settings.agent_claude_profile,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -232,6 +233,7 @@ async def run(args: argparse.Namespace) -> None:
                 host_scope=settings.agent_host_scope,
                 benign_max_citations=settings.agent_benign_max_citations,
                 complete_payload=settings.agent_complete_payload,
+                claude_profile=settings.agent_claude_profile,
                 conclude_flags={
                     f.strip() for f in settings.agent_conclude_flags.split(",") if f.strip()
                 },

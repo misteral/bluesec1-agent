@@ -155,6 +155,15 @@ final-v3 correct malicious answers (n=50): identity_to_rotate present 78 % (Q 0.
 | H-47 | P2 | Generic one-row-per-object format example (types only) in the review prompt, from the organisers' reference. | — |
 | H-48 | P3 | Hybrid: deepseek-v4.1-flash navigates (E 0.996), mimo decides and writes the payload. | — |
 
+
+## Claude profile (2026-10-09)
+
+Sonnet 5.5 (exp-043, 5 FP) and Haiku 5.5 (exp-050, 4 FP) lean malicious on the same pattern: powerful but authorised activity — directory admin console adding a user to a privileged group, automation account editing directory ACLs, management-agent scheduled task, installer-created service, incident-response collection tools, LAPS read — flagged on capability without checking who acted. Haiku is also shallow (5 calls/task).
+
+| ID | P | Hypothesis | Test |
+|---|---|---|---|
+| H-49 | P1 | **Claude profile:** (a) prompt calibration — authorised administration by the expected account through the expected channel is benign; attack needs evidence of intent (unexpected/compromised actor, credential theft, unknown source, C2, evasion, destruction); (b) conclude check `attack_actor` — an attack conclusion requires the acting account (user entity or directory object) to have been examined. General, symmetric to K1–K3. | exp-051 (Sonnet), exp-052 (Haiku) |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every
