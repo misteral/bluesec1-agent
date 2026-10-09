@@ -807,9 +807,10 @@ class SimpleSGRAgent:
                 feedback = self._tool_feedback(response)
                 # H-46: the per-call platform reward is recorded for offline analysis only;
                 # keys starting with "_" never reach the model.
-                feedback["_reward"] = response.reward
                 if tool_name == "expand_entity":
                     feedback = self._neighbourhood(arguments["entity_id"], feedback)
+                # Set after _neighbourhood (it builds a new dict) — exp-047…052 lost expand rewards.
+                feedback["_reward"] = response.reward
                 if redirected_from is not None:
                     feedback["note"] = (
                         f"Your {redirected_from} call was a repeat or used the wrong id kind; "
