@@ -129,6 +129,14 @@ def usage_cost(usage: Any) -> float:
     if usage is None:
         return 0.0
     cost = float(getattr(usage, "cost", 0.0) or 0.0)
+    extra = getattr(usage, "model_extra", None) or {}
+    is_byok = getattr(usage, "is_byok", None)
+    if is_byok is None:
+        is_byok = extra.get("is_byok")
+    if not is_byok:
+        # Without BYOK, `cost` already is what we pay; upstream cost would double-count it
+        # (exp-044…046 reported ≈$0.85/run instead of ≈$0.3).
+        return cost
     details = getattr(usage, "cost_details", None)
     if isinstance(details, dict):
         upstream = details.get("upstream_inference_cost")

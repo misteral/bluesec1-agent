@@ -312,3 +312,12 @@ def test_claude_invoke_xml_is_recovered() -> None:
     step = parse_next_step_payload(step_from_invoke_xml(raw))
     assert step.function.tool == "get_entity"
     assert step.function.entity_id == "e1"
+
+
+def test_usage_cost_adds_upstream_only_for_byok() -> None:
+    from bluesec1_agent.llm import usage_cost
+
+    paid = SimpleNamespace(cost=0.01, is_byok=False, cost_details={"upstream_inference_cost": 0.01})
+    byok = SimpleNamespace(cost=0.0, is_byok=True, cost_details={"upstream_inference_cost": 0.02})
+    assert usage_cost(paid) == 0.01
+    assert usage_cost(byok) == 0.02
