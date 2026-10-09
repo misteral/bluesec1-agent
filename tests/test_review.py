@@ -294,3 +294,39 @@ def test_complete_payload_adds_account_image_file_and_alert_host() -> None:
     assert ("f1", "file_to_delete") in done
     assert ("f2", "file_to_delete") not in done
     assert ("h1", "host_to_isolate") in done
+
+
+def test_clean_rows_drops_non_artifacts_and_moves_identity_to_account() -> None:
+    from bluesec1_agent.review import clean_malicious_rows
+
+    book = EntityBook()
+    book.learn(
+        [
+            {"id": "p1", "type": "windows_process", "properties": {"user": "CORP\\jdoe"}},
+            {"id": "u1", "type": "windows_user", "properties": {"username": "jdoe"}},
+            {"id": "s1", "type": "powershell_script", "properties": {"path": "a.ps1"}},
+            {"id": "n1", "type": "named_pipe", "properties": {"name": "x"}},
+        ]
+    )
+    rows = [
+        {"entity_id": "p1", "kind": "process_observed"},
+        {"entity_id": "p1", "kind": "identity_to_rotate"},
+        {"entity_id": "s1", "kind": "file_to_delete"},
+        {"entity_id": "n1", "kind": "artifact_observed"},
+    ]
+    assert {(r["entity_id"], r["kind"]) for r in clean_malicious_rows(rows, book)} == {
+        ("p1", "process_observed"),
+        ("u1", "identity_to_rotate"),
+    }
+
+
+def test_cap_rows_keeps_hosts_accounts_alerted_first() -> None:
+    from bluesec1_agent.review import cap_malicious_rows
+
+    rows = [{"entity_id": f"c{i}", "kind": "process_observed"} for i in range(6)] + [
+        {"entity_id": "h1", "kind": "host_to_isolate"},
+        {"entity_id": "u1", "kind": "identity_to_rotate"},
+        {"entity_id": "a1", "kind": "process_observed"},
+    ]
+    kept = cap_malicious_rows(rows, {"a1"}, max_rows=4)
+    assert [r["entity_id"] for r in kept] == ["h1", "u1", "a1", "c0"]

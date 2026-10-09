@@ -563,3 +563,53 @@ def test_platform_reward_is_recorded_but_never_shown_to_the_model(tmp_path: Path
     steps = [json.loads(line) for line in (recorder.directory / "steps.jsonl").open()]
     assert steps[0]["reward"] == 1.0
     assert all("_reward" not in str(m) for request in llm.requests for m in request)
+
+
+class RootSession(FakeSession):
+    """Alert with a process whose account entity is not observed; search returns it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        alert = {
+            "trigger_entities": [
+                {"id": "proc-9", "type": "windows_process", "properties": {"user": "CORP\\\\jdoe1"}}
+            ]
+        }
+        self.task = PublicTask(
+            task_id="task-1",
+            observation={**self.task.observation, "alert_text": json.dumps(alert)},
+        )
+
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolCallResult:
+        if tool_name == "search":
+            self.calls.append((tool_name, arguments))
+            result = {
+                "results": [
+                    {
+                        "kind": "entity",
+                        "id": "user-1",
+                        "type": "windows_user",
+                        "properties": {"username": "jdoe1"},
+                    }
+                ]
+            }
+            return ToolCallResult(
+                task_id="task-1",
+                tool_name="search",
+                reward=1.0,
+                info={"tool_status": "ok", "tool_result": result},
+            )
+        return await super().call_tool(tool_name, arguments)
+
+
+def test_resolve_roots_fetches_account_and_adds_identity_row() -> None:
+    """H-A: a missing account entity is searched before finishing and rotated."""
+    session = RootSession()
+    agent = SimpleSGRAgent(FakeStepClient(two_step_plan()), resolve_roots=True)
+
+    asyncio.run(agent.run(cast(RemoteBenchmarkClient, FakeClient(session))))
+
+    names = [name for name, _ in session.calls]
+    assert names == ["get_entity", "search", "finish_investigation"]
+    rows = session.calls[-1][1]["submission"]["ir_artifacts"]
+    assert {"entity_id": "user-1", "kind": "identity_to_rotate"} in rows

@@ -161,6 +161,10 @@ async def run(args: argparse.Namespace) -> None:
                 "benign_max_citations": settings.agent_benign_max_citations,
                 "complete_payload": settings.agent_complete_payload,
                 "claude_profile": settings.agent_claude_profile,
+                "resolve_roots": settings.agent_resolve_roots,
+                "clean_rows": settings.agent_clean_rows,
+                "max_rows": settings.agent_max_rows,
+                "local_relations": settings.agent_local_relations,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -234,6 +238,10 @@ async def run(args: argparse.Namespace) -> None:
                 benign_max_citations=settings.agent_benign_max_citations,
                 complete_payload=settings.agent_complete_payload,
                 claude_profile=settings.agent_claude_profile,
+                resolve_roots=settings.agent_resolve_roots,
+                clean_rows=settings.agent_clean_rows,
+                max_rows=settings.agent_max_rows,
+                local_relations=settings.agent_local_relations,
                 conclude_flags={
                     f.strip() for f in settings.agent_conclude_flags.split(",") if f.strip()
                 },

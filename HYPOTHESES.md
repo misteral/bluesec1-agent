@@ -164,6 +164,20 @@ Sonnet 5.5 (exp-043, 5 FP) and Haiku 5.5 (exp-050, 4 FP) lean malicious on the s
 |---|---|---|---|
 | H-49 | P1 | **Claude profile:** (a) prompt calibration — authorised administration by the expected account through the expected channel is benign; attack needs evidence of intent (unexpected/compromised actor, credential theft, unknown source, C2, evasion, destruction); (b) conclude check `attack_actor` — an attack conclusion requires the acting account (user entity or directory object) to have been examined. General, symmetric to K1–K3. | exp-051 (Sonnet), exp-052 (Haiku) |
 
+
+## soc-expert consultation 4 (2026-10-09): one-by-one review with step rewards
+
+Verified: a call earns reward only when it first returns a new *entity* (get_entity/search; expand neighbours do not count until fetched) — the ground-truth discovery set. **Quality grows with discovered gold**, for benign too (empty evidence ⇒ 0.5 + discovery). Account entity (windows_user) is gold in 16 templates, fetched in ~50 % of our tasks; remote-origin host in 7; files written by the alerted process, consequential children, email, persistence/UAC registry keys are gold; network_connection 0/45, cmdlets 0/90, powershell_script 2/29, recon children and LOLBin ancestors rarely. Template-fixed regression: named_pipe −0.087/row, script −0.03, cmdlet −0.034, child process −0.023; identity_to_rotate +0.056, other host +0.049, mailbox +0.11. get_relation: 51 calls, 0 gold.
+
+| ID | P | Hypothesis | Test |
+|---|---|---|---|
+| H-A | P1 | Before finishing, the harness fetches the account entity (search username, scope windows_user) and the remote-origin host (search source IP, scope host) when not yet observed; malicious → add identity_to_rotate / host_to_isolate. | exp-053, exp-055 |
+| H-B | P1 | Deterministic cleanup: drop script/pipe/cmdlet/connection rows and artifact_observed; move identity rows from processes to their account. | exp-054, exp-055 |
+| H-C | P1 | Cap malicious rows at 8 by priority (hosts → accounts → alerted entity → files → processes → persistence/mailbox …). | exp-054, exp-055 |
+| H-D | P2 | Benign: fetch ≤3 unfetched direct neighbours when calls are below budget (discovery). | — |
+| H-E | P1 | Answer get_relation for already-known edges locally (no platform call). | exp-053, exp-055 |
+| H-F | P2 | Malicious: one hop up to the root when the parent is an auto-elevate binary, WMI/WinRM host or service. | — |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every

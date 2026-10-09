@@ -520,3 +520,72 @@ def complete_malicious_payload(
         if host in book.entities:
             add(host, "host_to_isolate")
     return rows + added
+
+
+# soc-expert consultation 4 (step rewards = ground-truth discovery; template-fixed regression over
+# 496 malicious answers): these entity types are never/rarely ground truth and cost Q per row.
+NON_ARTIFACT_TYPES = {
+    "powershell_script",
+    "named_pipe",
+    "powershell_cmdlet_invocation",
+    "network_connection",
+}
+ROW_PRIORITY = (
+    "host_to_isolate",
+    "identity_to_rotate",
+    "@alerted",
+    "file_to_delete",
+    "file_observed",
+    "process_observed",
+    "persistence_to_remove",
+    "mailbox_action",
+    "registry_observed",
+)
+
+
+def clean_malicious_rows(rows: list[dict[str, str]], book: EntityBook) -> list[dict[str, str]]:
+    """H-B: drop telemetry/script/pipe rows and artifact_observed; fix identity rows on processes.
+
+    An identity_to_rotate row pointing at a process is moved to that process' account entity
+    when observed (16 kind/type mismatches seen in the logs). Never empties the list.
+    """
+    users = {
+        e["props"].get("username", "").lower(): eid
+        for eid, e in book.entities.items()
+        if e["type"] in ("windows_user", "linux_user") and e.get("props", {}).get("username")
+    }
+    cleaned: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        entity = book.entities.get(row.get("entity_id", "")) or {}
+        kind = row.get("kind", "")
+        if entity.get("type") in NON_ARTIFACT_TYPES or kind == "artifact_observed":
+            continue
+        if kind == "identity_to_rotate" and entity.get("type") in (
+            "windows_process",
+            "linux_process",
+        ):
+            account = entity.get("props", {}).get("user", "").split("\\")[-1].lower()
+            if account not in users:
+                continue
+            row = {"entity_id": users[account], "kind": kind}
+        key = (row.get("entity_id", ""), row.get("kind", ""))
+        if key not in seen:
+            seen.add(key)
+            cleaned.append(row)
+    return cleaned or rows
+
+
+def cap_malicious_rows(
+    rows: list[dict[str, str]], alert_ids: set[str], max_rows: int = 8
+) -> list[dict[str, str]]:
+    """H-C: keep at most `max_rows`, by priority: hosts, accounts, alerted entity, files, ..."""
+
+    def rank(row: dict[str, str]) -> int:
+        if row.get("entity_id") in alert_ids and row.get("kind") != "host_to_isolate":
+            return ROW_PRIORITY.index("@alerted")
+        kind = row.get("kind", "")
+        return ROW_PRIORITY.index(kind) if kind in ROW_PRIORITY else len(ROW_PRIORITY)
+
+    ordered = sorted(enumerate(rows), key=lambda item: (rank(item[1]), item[0]))
+    return [row for _, row in ordered[:max_rows]]

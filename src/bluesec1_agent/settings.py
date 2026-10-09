@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     )
     agent_complete_payload: bool = Field(default=False, validation_alias="AGENT_COMPLETE_PAYLOAD")
     agent_claude_profile: bool = Field(default=False, validation_alias="AGENT_CLAUDE_PROFILE")
+    agent_resolve_roots: bool = Field(default=False, validation_alias="AGENT_RESOLVE_ROOTS")
+    agent_clean_rows: bool = Field(default=False, validation_alias="AGENT_CLEAN_ROWS")
+    agent_max_rows: int = Field(default=0, validation_alias="AGENT_MAX_ROWS", ge=0, le=30)
+    agent_local_relations: bool = Field(default=False, validation_alias="AGENT_LOCAL_RELATIONS")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",
