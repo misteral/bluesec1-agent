@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     agent_benign_max_citations: int = Field(
         default=3, validation_alias="AGENT_BENIGN_MAX_CITATIONS", ge=1, le=6
     )
+    agent_complete_payload: bool = Field(default=False, validation_alias="AGENT_COMPLETE_PAYLOAD")
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

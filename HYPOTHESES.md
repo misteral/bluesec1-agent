@@ -142,6 +142,19 @@ Organisers shared a solved sample (alert → 9 calls → finish, quality 1.0, ef
 | G5 | P3 | One `process_observed` per attacker-controlled process, not legitimate ancestry. | reference 1 vs our 4.7; our Q flat across counts | — |
 | G6 | P2 | Efficiency: pivot on exact values from the last result; avoid `get_relation`; no hard cap. | reference 9 calls vs our 12–15 | — |
 
+
+## Payload completeness and reward signal (2026-10-09)
+
+final-v3 correct malicious answers (n=50): identity_to_rotate present 78 % (Q 0.65 vs 0.55 without), file_to_delete 62 % (0.64 vs 0.60), host_to_isolate 96 %, process_observed 3.7 rows/task.
+
+| ID | P | Hypothesis | Test |
+|---|---|---|---|
+| H-45 | P1 | **Deterministic completion of malicious answers:** for each reported attacker process add its account (identity_to_rotate, unless builtin) and its non-system image file (file_to_delete) when observed; add the alerted host (host_to_isolate). Every reference answer contains host + identity + dropped file. | exp-047 |
+| H-46 | P1 | **Record the per-call platform reward** (reference walkthrough: +1 for a call that first surfaces a ground-truth object) — offline only, never shown to the model; mine which entity *roles* are ground truth to derive general payload rules. | recording on from 2026-10-09 |
+| H-46b | — | Using that reward live (include entities surfaced by rewarded calls) would read the answer key through the reward channel. **Not done without the owner's decision** (fair-play risk; unknown on the credit stage). | — |
+| H-47 | P2 | Generic one-row-per-object format example (types only) in the review prompt, from the organisers' reference. | — |
+| H-48 | P3 | Hybrid: deepseek-v4.1-flash navigates (E 0.996), mimo decides and writes the payload. | — |
+
 ## Not adopted (and why)
 
 - "Expose everything as one `execute_code` tool and let the model loop" — in BlueSec **every

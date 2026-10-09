@@ -548,3 +548,18 @@ def test_conclude_step_is_required_and_code_verified() -> None:
     replies = [m[-1]["content"] for m in llm.requests[2:4]]
     assert "Call conclude before finish_investigation" in replies[0]
     assert "Conclusion recorded" in replies[1]
+
+
+def test_platform_reward_is_recorded_but_never_shown_to_the_model(tmp_path: Path) -> None:
+    """H-46: per-call reward goes to steps.jsonl only."""
+    recorder = RunRecorder("exp-test", {"model": "m"}, root=tmp_path)
+    llm = FakeStepClient(two_step_plan())
+    asyncio.run(
+        SimpleSGRAgent(llm, recorder=recorder).run(
+            cast(RemoteBenchmarkClient, FakeClient(FakeSession()))
+        )
+    )
+
+    steps = [json.loads(line) for line in (recorder.directory / "steps.jsonl").open()]
+    assert steps[0]["reward"] == 1.0
+    assert all("_reward" not in str(m) for request in llm.requests for m in request)

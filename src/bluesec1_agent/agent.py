@@ -20,6 +20,7 @@ from bluesec1_agent.review import (
     PROCESS_LINE,
     EntityBook,
     apply_payload_policy,
+    complete_malicious_payload,
     gate_issues,
     review_message,
     sanitize_submission,
@@ -303,6 +304,7 @@ class SimpleSGRAgent:
         min_processes: bool = False,
         host_scope: bool = False,
         benign_max_citations: int = 3,
+        complete_payload: bool = False,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -369,6 +371,7 @@ class SimpleSGRAgent:
         self.min_processes = min_processes
         self.host_scope = host_scope
         self.benign_max_citations = benign_max_citations
+        self.complete_payload = complete_payload
         if hash_pivot:
             self.system_prompt = f"{self.system_prompt}\n\n{HASH_PIVOT_ADDON}"
         if self.conclude_flags:
@@ -720,6 +723,16 @@ class SimpleSGRAgent:
                         if isinstance(e, dict) and "id" in e
                     ],
                 )
+            if (
+                tool_name == "finish_investigation"
+                and self.complete_payload
+                and (arguments.get("submission") or {}).get("verdict") == "malicious"
+            ):
+                sub = arguments["submission"]
+                rows = list(sub.get("ir_artifacts") or [])
+                completed = complete_malicious_payload(rows, book, task_log.alert_hosts)
+                self._task_stats["completed_rows"] = len(completed) - len(rows)
+                arguments["submission"] = {**sub, "ir_artifacts": completed}
             submission = arguments.get("submission") or {}
             if (
                 tool_name == "finish_investigation"
@@ -774,6 +787,9 @@ class SimpleSGRAgent:
                     session.call_tool, platform_tool, platform_arguments
                 )
                 feedback = self._tool_feedback(response)
+                # H-46: the per-call platform reward is recorded for offline analysis only;
+                # keys starting with "_" never reach the model.
+                feedback["_reward"] = response.reward
                 if tool_name == "expand_entity":
                     feedback = self._neighbourhood(arguments["entity_id"], feedback)
                 if redirected_from is not None:
@@ -804,7 +820,11 @@ class SimpleSGRAgent:
                 {
                     "role": "tool",
                     "content": render_json(
-                        {key: value for key, value in feedback.items() if key != "raw_result"}
+                        {
+                            key: value
+                            for key, value in feedback.items()
+                            if key != "raw_result" and not key.startswith("_")
+                        }
                     ),
                     "tool_call_id": tool_call_id,
                 }
@@ -961,6 +981,7 @@ class SimpleSGRAgent:
                 "error": error,
                 "result_chars": len(render_json(feedback.get("result"))),
                 "local_guard": feedback.get("local_guard"),
+                "reward": feedback.get("_reward"),
                 # Raw per-call evidence for analysis and offline replay (runs/ is gitignored).
                 "result": feedback.get("result"),
                 "extra": {

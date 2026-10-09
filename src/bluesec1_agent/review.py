@@ -187,6 +187,11 @@ class EntityBook:
                 "type": value["type"],
                 "label": self._label(properties),
                 "fields": sorted(key for key, item in properties.items() if item is not None),
+                "props": {
+                    key: str(properties[key])
+                    for key in ("user", "image_path", "path", "username", "domain")
+                    if properties.get(key)
+                },
                 "ips": sorted(
                     {
                         str(item)
@@ -465,3 +470,53 @@ def apply_payload_policy(
         if evidence:
             shaped["legitimacy_evidence"] = evidence
     return shaped
+
+
+BUILTIN_ACCOUNTS = {"system", "local service", "network service", "localsystem"}
+SYSTEM_PATH_PREFIXES = ("c:\\windows\\", "c:\\program files", "/usr/", "/bin/", "/sbin/", "/lib")
+
+
+def complete_malicious_payload(
+    rows: list[dict[str, str]], book: EntityBook, alert_hosts: set[str]
+) -> list[dict[str, str]]:
+    """H-45: add the objects every reference answer contains, deterministically.
+
+    For each reported attacker process: its account (`identity_to_rotate`, unless builtin) and
+    its non-system image file (`file_to_delete`), when those entities were observed; plus the
+    alerted host (`host_to_isolate`). final-v3 answers lacked identity in 22 % and
+    file_to_delete in 38 % of correct malicious tasks (Q 0.65 vs 0.55 / 0.64 vs 0.60).
+    """
+    present = {(r.get("entity_id"), r.get("kind")) for r in rows}
+    added: list[dict[str, str]] = []
+
+    def add(entity_id: str, kind: str) -> None:
+        if (entity_id, kind) not in present:
+            present.add((entity_id, kind))
+            added.append({"entity_id": entity_id, "kind": kind})
+
+    users = {
+        eid: e for eid, e in book.entities.items() if e["type"] in ("windows_user", "linux_user")
+    }
+    files = {
+        eid: e for eid, e in book.entities.items() if e["type"] in ("windows_file", "linux_file")
+    }
+    for row in rows:
+        process = book.entities.get(row.get("entity_id", "")) or {}
+        if row.get("kind") != "process_observed" or not process:
+            continue
+        props = process.get("props", {})
+        account = props.get("user", "")
+        name = account.split("\\")[-1].lower()
+        if name and name not in BUILTIN_ACCOUNTS and not name.endswith("$"):
+            for eid, user in users.items():
+                if user.get("props", {}).get("username", "").lower() == name:
+                    add(eid, "identity_to_rotate")
+        image = props.get("image_path", "").lower()
+        if image and not image.startswith(SYSTEM_PATH_PREFIXES):
+            for eid, file in files.items():
+                if file.get("props", {}).get("path", "").lower() == image:
+                    add(eid, "file_to_delete")
+    for host in alert_hosts:
+        if host in book.entities:
+            add(host, "host_to_isolate")
+    return rows + added

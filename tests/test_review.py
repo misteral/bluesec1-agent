@@ -240,3 +240,57 @@ def test_host_scope_rewrites_the_checklist_source_host_clause() -> None:
     )
     assert "including the source of a remote session" not in text
     assert "with observed attacker activity" in text
+
+
+def test_complete_payload_adds_account_image_file_and_alert_host() -> None:
+    """H-45: identity, non-system image file and alert host are added deterministically."""
+    from bluesec1_agent.review import complete_malicious_payload
+
+    book = EntityBook()
+    book.learn(
+        [
+            {"id": "h1", "type": "host", "properties": {"hostname": "H1"}},
+            {
+                "id": "p1",
+                "type": "windows_process",
+                "properties": {
+                    "user": "CORP\\jdoe",
+                    "image_path": "C:\\Users\\Public\\x.exe",
+                },
+            },
+            {
+                "id": "p2",
+                "type": "windows_process",
+                "properties": {
+                    "user": "NT AUTHORITY\\SYSTEM",
+                    "image_path": "C:\\Windows\\System32\\cmd.exe",
+                },
+            },
+            {
+                "id": "u1",
+                "type": "windows_user",
+                "properties": {"username": "jdoe", "domain": "CORP"},
+            },
+            {
+                "id": "f1",
+                "type": "windows_file",
+                "properties": {"path": "C:\\Users\\Public\\x.exe"},
+            },
+            {
+                "id": "f2",
+                "type": "windows_file",
+                "properties": {"path": "C:\\Windows\\System32\\cmd.exe"},
+            },
+        ]
+    )
+    rows = [
+        {"entity_id": "p1", "kind": "process_observed"},
+        {"entity_id": "p2", "kind": "process_observed"},
+    ]
+
+    done = {(r["entity_id"], r["kind"]) for r in complete_malicious_payload(rows, book, {"h1"})}
+
+    assert ("u1", "identity_to_rotate") in done
+    assert ("f1", "file_to_delete") in done
+    assert ("f2", "file_to_delete") not in done
+    assert ("h1", "host_to_isolate") in done
