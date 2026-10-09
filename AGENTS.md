@@ -102,6 +102,9 @@ pick from there, then open an `exp-NNN` row.
   per-scenario comparison (scenarios keyed by alert fingerprint; task ids change per lease).
 - Deltas within the noise floor (spread of repeated baseline runs) do not count.
 
+Budgets (2026-10-09): OpenRouter key ≈$7.6 for mimo/deepseek runs (≈$0.43 per mimo run); owner's Anthropic
+key via OpenRouter BYOK — Anthropic budget $150 (Sonnet ≈$27/run, Haiku ≈$1/run); always pin `LLM_PROVIDER_ONLY=anthropic`.
+
 Remotes: `origin` = private `misteral/bluesec1-agent` (ours, push here); `upstream` = the
 organisers' public reference repo (pull updates only, never push).
 Commit and push after every significant result (finished experiment, working feature),
