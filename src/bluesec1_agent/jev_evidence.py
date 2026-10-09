@@ -75,6 +75,7 @@ async def jev_root_cause_evidence(
     book: EntityBook,
     alert: dict[str, Any],
     verdict_reasoning: str,
+    max_items: int = 3,
 ) -> list[dict[str, Any]] | None:
     """Return 1–3 root-cause entity citations chosen by Jev, or None to keep the LLM's own.
 
@@ -120,7 +121,9 @@ async def jev_root_cause_evidence(
         logger.warning("Jev root-cause selection failed: {}", error)
         return None
     evidence: list[dict[str, Any]] = []
-    for role, options in options_by_role.items():
+    # Most telling first when only a few citations are kept: what launched it, then who.
+    for role in sorted(options_by_role, key=["launcher", "actor", "action"].index):
+        options = options_by_role[role]
         answer = answers.get(role) or {}
         choice = answer.get("choice")
         confidence = float(answer.get("confidence") or 0.0)
@@ -130,4 +133,4 @@ async def jev_root_cause_evidence(
         fields = [f for f in FIELDS_BY_ROLE[role] if f in book.entities[entity_id]["fields"]][:2]
         if fields and all(e["entity_id"] != entity_id for e in evidence):
             evidence.append({"anchor": "entity", "entity_id": entity_id, "property_fields": fields})
-    return evidence or None
+    return evidence[:max_items] or None

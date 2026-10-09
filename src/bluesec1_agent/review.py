@@ -294,6 +294,18 @@ C2_LINE = (
     "The attacker's outbound channel to a public address is reported as network_block on that "
     "connection record."
 )
+# G5 / G3 (organisers' reference answer: one process row for the attacker process only;
+# the remote-session source host without observed attacker activity was not isolated).
+PROCESS_LINE = (
+    "Report process_observed only for processes the attacker controls or launched (its tools, "
+    "shells, scripts) — never the legitimate ancestry (logon shell, explorer, service host, "
+    "remote-session host, the parent that merely started the session)."
+)
+HOST_LINE = (
+    "Isolate (host_to_isolate) only hosts where attacker activity is observed — attacker "
+    "processes, files or actions on that host. A host that only appears as the source of a "
+    "remote session, with no attacker activity seen on it, is not isolated."
+)
 IDENTITY_LINE = (
     "Always include identity_to_rotate for the account whose session ran the attacker's code "
     "(unless it is a builtin system account)."
@@ -325,7 +337,13 @@ def review_message(
         *(f"- {e['entity_id']} | {e['type']} | {e['label']}" for e in book.catalogue()),
     ]
     if precision:
-        lines.append(PRECISION_CHECKLIST)
+        checklist = PRECISION_CHECKLIST
+        if HOST_LINE in extra_lines:
+            checklist = checklist.replace(
+                "compromised hosts (including the source of a remote session)",
+                "compromised hosts with observed attacker activity",
+            )
+        lines.append(checklist)
         lines.extend(extra_lines)
         return "\n".join(lines)
     lines += [

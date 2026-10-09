@@ -71,3 +71,17 @@ def test_low_confidence_keeps_the_llm_evidence() -> None:
         jev_root_cause_evidence(cast(JevClient, PickFirstJev(0.2)), book(), {}, "admin")
     )
     assert evidence is None
+
+
+def test_single_citation_prefers_the_launcher() -> None:
+    jev = PickFirstJev(0.9)
+    evidence = asyncio.run(
+        jev_root_cause_evidence(
+            cast(JevClient, jev),
+            book(),
+            {"trigger_entities": [{"id": "alerted"}]},
+            "admin",
+            max_items=1,
+        )
+    )
+    assert evidence is not None and [e["entity_id"] for e in evidence] == ["parent"]

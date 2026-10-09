@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     payload_keep_c2: bool = Field(default=False, validation_alias="PAYLOAD_KEEP_C2")
     agent_rotate_identity: bool = Field(default=False, validation_alias="AGENT_ROTATE_IDENTITY")
     agent_hash_pivot: bool = Field(default=False, validation_alias="AGENT_HASH_PIVOT")
+    agent_min_processes: bool = Field(default=False, validation_alias="AGENT_MIN_PROCESSES")
+    agent_host_scope: bool = Field(default=False, validation_alias="AGENT_HOST_SCOPE")
+    agent_benign_max_citations: int = Field(
+        default=3, validation_alias="AGENT_BENIGN_MAX_CITATIONS", ge=1, le=6
+    )
     agent_prompt: Literal["reference", "strategy"] = Field(
         default="strategy",
         validation_alias="AGENT_PROMPT",

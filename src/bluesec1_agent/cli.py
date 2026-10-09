@@ -156,6 +156,9 @@ async def run(args: argparse.Namespace) -> None:
                 "payload_keep_c2": settings.payload_keep_c2,
                 "rotate_identity": settings.agent_rotate_identity,
                 "hash_pivot": settings.agent_hash_pivot,
+                "min_processes": settings.agent_min_processes,
+                "host_scope": settings.agent_host_scope,
+                "benign_max_citations": settings.agent_benign_max_citations,
                 "review_model": settings.llm_review_model,
                 "review_budget_usd": settings.llm_review_budget_usd,
                 "run_budget_usd": settings.llm_run_budget_usd,
@@ -224,6 +227,9 @@ async def run(args: argparse.Namespace) -> None:
                 keep_c2=settings.payload_keep_c2,
                 rotate_identity=settings.agent_rotate_identity,
                 hash_pivot=settings.agent_hash_pivot,
+                min_processes=settings.agent_min_processes,
+                host_scope=settings.agent_host_scope,
+                benign_max_citations=settings.agent_benign_max_citations,
                 conclude_flags={
                     f.strip() for f in settings.agent_conclude_flags.split(",") if f.strip()
                 },

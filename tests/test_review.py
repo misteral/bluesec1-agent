@@ -229,3 +229,14 @@ def test_keep_c2_keeps_public_connections_as_network_block() -> None:
         ("c2", "network_block"),
     }
     assert {r["entity_id"] for r in drop_telemetry(rows, book)} == {"proc-1"}
+
+
+def test_host_scope_rewrites_the_checklist_source_host_clause() -> None:
+    """G3: the checklist must not also ask to isolate every remote-session source."""
+    from bluesec1_agent.review import HOST_LINE, review_message
+
+    text = review_message(
+        {"verdict": "malicious"}, make_book(), [], precision=True, extra_lines=(HOST_LINE,)
+    )
+    assert "including the source of a remote session" not in text
+    assert "with observed attacker activity" in text

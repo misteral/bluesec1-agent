@@ -15,7 +15,9 @@ from bluesec1_agent.llm import NextStepRequestError, StructuredStepClient, rende
 from bluesec1_agent.models import FinishInvestigationRequest, NextStep
 from bluesec1_agent.review import (
     C2_LINE,
+    HOST_LINE,
     IDENTITY_LINE,
+    PROCESS_LINE,
     EntityBook,
     apply_payload_policy,
     gate_issues,
@@ -298,6 +300,9 @@ class SimpleSGRAgent:
         keep_c2: bool = False,
         rotate_identity: bool = False,
         hash_pivot: bool = False,
+        min_processes: bool = False,
+        host_scope: bool = False,
+        benign_max_citations: int = 3,
     ) -> None:
         """Store the LLM dependency and per-task step limit.
 
@@ -361,6 +366,9 @@ class SimpleSGRAgent:
                 "connection to a public address is reported as network_block on that connection.",
             )
         self.rotate_identity = rotate_identity
+        self.min_processes = min_processes
+        self.host_scope = host_scope
+        self.benign_max_citations = benign_max_citations
         if hash_pivot:
             self.system_prompt = f"{self.system_prompt}\n\n{HASH_PIVOT_ADDON}"
         if self.conclude_flags:
@@ -673,6 +681,8 @@ class SimpleSGRAgent:
                                 for line, on in (
                                     (C2_LINE, self.keep_c2),
                                     (IDENTITY_LINE, self.rotate_identity),
+                                    (PROCESS_LINE, self.min_processes),
+                                    (HOST_LINE, self.host_scope),
                                 )
                                 if on
                             ),
@@ -698,6 +708,7 @@ class SimpleSGRAgent:
                     arguments.get("submission", {}),
                     book,
                     tiers=self.payload_tiers,
+                    benign_max_entities=self.benign_max_citations,
                     v2=self.payload_v2,
                     no_telemetry=self.no_telemetry,
                     keep_c2=self.keep_c2,
@@ -721,6 +732,7 @@ class SimpleSGRAgent:
                     book,
                     alert if isinstance(alert, dict) else {},
                     str(submission.get("reasoning") or ""),
+                    max_items=self.benign_max_citations,
                 )
                 self._task_stats["cost_usd"] += self.jev_benign.cost_usd - cost_before
                 self._task_stats["jev_benign_evidence"] = chosen is not None
