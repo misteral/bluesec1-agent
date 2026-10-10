@@ -66,7 +66,8 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 | Jev-only (exp-010 ≡ exp-012) | exp-010, exp-012 | 23.8, 20.0 | ≈4 reward, 0.002 quality — **understated** (exp-019 changed its verdict mix) |
 | mimo LLM agent (exp-013 ≡ exp-018) | exp-013, exp-018 | platform 12.00, 11.75 | **≈0.25 points** |
 | final-v2 (exp-036 ≡ exp-037) | exp-036, exp-037 | 16.55, 16.10 | ≈0.45 |
-| **final-v3** (exp-039 ≡ exp-041) | exp-039, exp-041 | 17.45, 16.87 | ≈0.6 |
+| **final-v3** (exp-039 ≡ exp-041 ≡ exp-056) | exp-039, exp-041, exp-056 | 17.45, 16.87, 15.00 | ≈2.4 |
+| **final-v4** (exp-055 ≡ exp-057) | exp-055, exp-057 | 17.25, 16.57 | ≈0.7 |
 
 ## Log
 
@@ -130,4 +131,4 @@ Per run (`runs/<timestamp>-<experiment>/`): `config.json` (model, prompt hash, c
 | exp-054 | 2026-10-09 | _see run label_ | xiaomi/mimo-v2.6-flash | H-B + H-C (deterministic cleanup + cap 8) on final-v3 | final-v3 + `AGENT_CLEAN_ROWS=true AGENT_MAX_ROWS=8` | _pending_ | | | | | | score~ 15.64 (29/30); malicious Q|ok 0.605. |
 | exp-055 | 2026-10-09 | _see run label_ | xiaomi/mimo-v2.6-flash | all four (H-A, H-B, H-C, H-E) | final-v3 + all four | _pending_ | | | | | | **score~ 17.25 (30/30), 0 wrong, malicious Q|ok 0.640 — best of this batch** (same-batch control exp-056: 15.00 at 29/30, Q|ok 0.564). n=1 → replicate exp-057. |
 | exp-056 | 2026-10-09 | _see run label_ | xiaomi/mimo-v2.6-flash | control: final-v3 with fixed reward recording | final-v3 | _pending_ | | | | | | score~ 15.00 (29/30) — final-v3 control in the same batch; final-v3 spread is wider than thought (15.0–17.45). |
-| exp-057 | 2026-10-10 | _see run label_ | xiaomi/mimo-v2.6-flash | replicate of exp-055 (final-v3 + H-A, H-B, H-C, H-E) before the credit stage: confirm ≈17 to adopt as final-v4 | final-v3 + all four | _pending_ | | | | | | |
+| exp-057 | 2026-10-10 | _see run label_ | xiaomi/mimo-v2.6-flash | replicate of exp-055 (final-v3 + H-A, H-B, H-C, H-E) before the credit stage: confirm ≈17 to adopt as final-v4 | final-v3 + all four | _pending_ | | | | | | **score~ 16.57 (30/30)**, malicious Q|ok **0.664** (best), 1+1 wrong verdicts (≈−1.2). v4 mean ≈16.9 (17.25, 16.57) vs v3 ≈16.6 (17.45, 16.87, 15.00); payload quality consistently higher → **adopted as final-v4** (`scripts/launch_final.sh`). |
