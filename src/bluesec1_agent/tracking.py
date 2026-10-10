@@ -9,20 +9,21 @@ from typing import Any
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 RUN_TASKS = 30  # tasks per competition run (organisers, 2026-10-06)
-# Platform run score ≈ PLATFORM_SCALE × Σ quality·(0.5 + 0.5·efficiency) / 30 (failed = 0).
-# Fitted on 8 runs on 2026-10-07 (exp-008…015): ratio spread 1.5 %; quality alone fails on the
-# low-efficiency run (exp-015). The efficiency weight (≈0.2–0.5) is an estimate, not a spec.
-PLATFORM_SCALE = 30.2
+# Platform run score = Σ quality·(0.6 + 0.4·efficiency) over tasks (failed = 0). Read from the
+# public per-task run page (2026-10-10, exp-059: matches to 1e-4) and reproduces the cabinet
+# scores of exp-013/014/027 exactly; replaces the earlier fit 30.2·Σ Q·(0.5+0.5·E)/30.
+
+
+def task_score(task: dict[str, Any]) -> float:
+    """The platform's score for one task."""
+    quality = float(task.get("quality_score") or 0.0)
+    return quality * (0.6 + 0.4 * float(task.get("efficiency_score") or 0.0))
 
 
 def estimated_platform_score(tasks: list[dict[str, Any]]) -> float:
-    """Estimate the platform's run score from per-task quality and efficiency."""
-    total = sum(
-        float(t.get("quality_score") or 0.0) * (0.5 + 0.5 * float(t.get("efficiency_score") or 0.0))
-        for t in tasks
-        if t.get("completion_reason") == "terminated"
-    )
-    return round(PLATFORM_SCALE * total / RUN_TASKS, 3)
+    """The platform's run score from per-task quality and efficiency."""
+    total = sum(task_score(t) for t in tasks if t.get("completion_reason") == "terminated")
+    return round(total, 3)
 
 
 def sha256_text(text: str) -> str:

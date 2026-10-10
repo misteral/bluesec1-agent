@@ -16,10 +16,10 @@ review = sum(t.get("review_model_cost_usd") or 0 for t in tasks)
 name = d.name.split("-", 2)[-1][:28]
 q30 = sum(t.get("quality_score") or 0 for t in tasks if t.get("completion_reason") == "terminated") / 30
 # Same formula as tracking.estimated_platform_score (kept dependency-free for system python).
-est = 30.2 * sum(
-    (t.get("quality_score") or 0) * (0.5 + 0.5 * (t.get("efficiency_score") or 0))
+est = sum(
+    (t.get("quality_score") or 0) * (0.6 + 0.4 * (t.get("efficiency_score") or 0))
     for t in tasks if t.get("completion_reason") == "terminated"
-) / 30
+)
 print(f"{name:<28} {s['tasks']:>3}/30 {est:>6.2f} {q30:>6.3f} {s['mean_quality_score']:>8.3f} "
       f"{s['mean_efficiency_score']:>7.3f} {s['mean_tool_calls']:>6.1f} {s['error_call_rate']:>6.3f} "
       f"{s['total_cost_usd'] + review:>8.3f}")
