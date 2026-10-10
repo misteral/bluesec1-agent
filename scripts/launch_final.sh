@@ -26,7 +26,7 @@ for attempt in 1 2 3; do
   AGENT_LOCAL_RELATIONS=true \
   AGENT_CLEAN_ROWS=true \
   AGENT_MAX_ROWS=8 \
-  LLM_RUN_BUDGET_USD=1.0
+  LLM_RUN_BUDGET_USD=10.0
   sleep 90
   log=$(ls -t runs/"$1"-*.log | head -1)
   if grep -q "Starting structured investigation" "$log"; then exit 0; fi
