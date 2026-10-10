@@ -304,6 +304,7 @@ class SimpleSGRAgent:
         review_llm: StructuredStepClient | None = None,
         review_budget_usd: float = 0.0,
         run_budget_usd: float | None = None,
+        max_tasks: int | None = None,
         payload_policy: bool = False,
         payload_v2: bool = False,
         payload_tiers: bool = True,
@@ -340,6 +341,7 @@ class SimpleSGRAgent:
             review_llm: Optional stronger model for the review turn (H-08).
             review_budget_usd: Spend cap for `review_llm` across the run.
             run_budget_usd: Stop leasing new tasks once total LLM spend reaches this (USD).
+            max_tasks: Stop leasing new tasks after this many (short model probes).
             payload_policy: Shape the final payload with the contract tiers and benign cap.
             payload_v2: Stricter shaping (no artifact_observed; alert-first, ≤1 relation).
             payload_tiers: With payload_policy, also add missing tier rows to malicious
@@ -363,6 +365,7 @@ class SimpleSGRAgent:
         self.review_budget_usd = review_budget_usd
         self.review_spent_usd = 0.0
         self.run_budget_usd = run_budget_usd
+        self.max_tasks = max_tasks
         self.run_spent_usd = 0.0
         self.payload_policy = payload_policy
         self.payload_v2 = payload_v2
@@ -460,6 +463,9 @@ class SimpleSGRAgent:
                     self.run_spent_usd,
                     self.run_budget_usd,
                 )
+                break
+            if self.max_tasks is not None and len(task_results) >= self.max_tasks:
+                logger.info("Reached {} tasks; not leasing more.", self.max_tasks)
                 break
 
         successful_tasks = sum(

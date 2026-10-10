@@ -137,6 +137,8 @@ class Settings(BaseSettings):
     llm_run_budget_usd: float | None = Field(
         default=None, validation_alias="LLM_RUN_BUDGET_USD", gt=0
     )
+    # Stop leasing after this many tasks (short model probes on the practice arena).
+    agent_max_tasks: int | None = Field(default=None, validation_alias="AGENT_MAX_TASKS", gt=0)
     llm_reasoning_effort: Literal["low", "medium", "high"] | None = Field(
         default=None, validation_alias="LLM_REASONING_EFFORT"
     )
